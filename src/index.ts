@@ -78,7 +78,11 @@ async function main() {
   // WHOOP OAuth endpoints
   app.get('/auth/whoop/start', async (req, res, next) => {
     try {
-      const url = getWhoopAuthUrl(config);
+      // Generate a minimal state to satisfy WHOOP requirement
+      const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      const url = getWhoopAuthUrl(config, state);
+      // Set a lightweight cookie for optional validation
+      res.setHeader('Set-Cookie', `whoop_state=${state}; Path=/; HttpOnly; SameSite=Lax`);
       res.redirect(302, url);
     } catch (err) { next(err); }
   });
@@ -86,6 +90,15 @@ async function main() {
     try {
       const code = (req.query.code as string) || '';
       if (!code) return res.status(400).send('Missing code');
+      // Optional: validate state
+      try {
+        const state = (req.query.state as string) || '';
+        const cookie = (req.headers.cookie || '').split(';').map(s=>s.trim()).find(s=>s.startsWith('whoop_state='));
+        const stored = cookie ? cookie.split('=')[1] : '';
+        if (stored && state && stored !== state) {
+          return res.status(400).send('Invalid state');
+        }
+      } catch {}
       await exchangeWhoopCode(config, code);
       res.send('WHOOP authentication successful. You can close this window.');
     } catch (err) { next(err); }
