@@ -12,9 +12,7 @@ import { z } from 'zod';
 import { GmailHandler } from './handlers/gmail.js';
 import { CalendarHandler } from './handlers/calendar.js';
 import { WhoopHandler } from './handlers/whoop.js';
-import { PlaidHandler } from './handlers/plaid.js';
 import { KasaHandler } from './handlers/kasa.js';
-import { KnowledgeOrgHandler } from './handlers/knowledge-org.js';
 import { KrakenHandler } from './handlers/kraken.js';
 import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
@@ -191,9 +189,7 @@ async function main() {
     make(GmailHandler),
     make(CalendarHandler),
     make(WhoopHandler),
-    make(PlaidHandler),
     make(KasaHandler),
-    make(KnowledgeOrgHandler),
     make(KrakenHandler),
     make(RizeHandler),
     make(SlackHandler),

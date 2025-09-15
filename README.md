@@ -11,11 +11,11 @@ Features
 
 Project Structure
 - `src/index.ts` – main server and MCP transport
-- `src/handlers/*` – service handlers (Gmail, Calendar, Whoop, etc.)
+- `src/handlers/*` – service handlers (Gmail, Calendar, Whoop, Kraken, Rize, Kasa, Slack)
 - `src/utils/*` – config and logger
 - `src/middleware/*` – error and optional auth middleware
 - `scripts/*` – healthcheck and macOS launchd installer
-- `data/` – persistent data (e.g., knowledge base)
+- `data/` – persistent data for tokens/config
 
 Setup
 1. Copy `.env.example` to `.env` and fill any required keys.
@@ -68,5 +68,4 @@ Adding New Handlers
 4. Add any config keys to `.env.example`.
 
 Notes
-- Initial release stubs most external APIs; expands incrementally per PRD phases.
-- Knowledge base tools read/write under `KNOWLEDGE_BASE_PATH` (default `/app/data/knowledge`).
+- Handlers added/expanded incrementally; see docs/handlers for per-service guides.
