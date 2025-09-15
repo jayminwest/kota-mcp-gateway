@@ -8,18 +8,10 @@ function b64decode(input: string): Buffer {
   return Buffer.from(input, 'base64');
 }
 
-function sign(path: string, params: Record<string, any>, secretB64: string): string {
+function krakenSign(path: string, nonce: string, postDataEncoded: string, secretB64: string): string {
   const secret = b64decode(secretB64);
-  const body = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null) body.append(k, String(v));
-  }
-  const nonce = String(Date.now());
-  body.set('nonce', nonce);
-  const postData = body.toString();
-  const sha256 = createHash('sha256').update(nonce + postData).digest();
-  const hmac = createHmac('sha512', secret).update(Buffer.concat([Buffer.from(path), sha256])).digest('base64');
-  return hmac;
+  const sha256 = createHash('sha256').update(nonce + postDataEncoded).digest();
+  return createHmac('sha512', secret).update(Buffer.concat([Buffer.from(path), sha256])).digest('base64');
 }
 
 export class KrakenClient {
@@ -47,16 +39,19 @@ export class KrakenClient {
       'API-Key': this.key,
       'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
     };
-    // Signature uses nonce + post body
-    const bodyParams: Record<string, any> = { ...(params || {}) };
-    const sig = sign(path, bodyParams, this.secret);
-    headers['API-Sign'] = sig;
+    // Build body once with a fixed nonce, and sign that exact encoding
+    const nonce = String(Date.now());
     const body = new URLSearchParams();
-    for (const [k, v] of Object.entries(bodyParams)) if (v !== undefined && v !== null) body.append(k, String(v));
-    // nonce added inside sign(), ensure same nonce in body
-    if (!body.has('nonce')) body.set('nonce', String(Date.now()));
+    body.append('nonce', nonce);
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) body.append(k, String(v));
+      }
+    }
+    const encoded = body.toString();
+    headers['API-Sign'] = krakenSign(path, nonce, encoded, this.secret);
 
-    const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: body.toString() } as any);
+    const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: encoded } as any);
     if (!res.ok) throw new Error(`Kraken private ${endpoint} failed: ${res.status}`);
     const data = await res.json();
     if (data.error && data.error.length) {
@@ -69,4 +64,3 @@ export class KrakenClient {
   getTicker(pair: string) { return this.public('Ticker', { pair }); }
   getBalance() { return this.private('Balance'); }
 }
-
