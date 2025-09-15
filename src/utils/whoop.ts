@@ -66,14 +66,6 @@ export function getWhoopAuthUrl(config: AppConfig, state?: string) {
   return `${AUTH_URL}?${qs.toString()}`;
 }
 
-async function basicAuthHeader(config: AppConfig) {
-  const cid = config.WHOOP_CLIENT_ID;
-  const cs = config.WHOOP_CLIENT_SECRET;
-  if (!cid || !cs) throw new Error('Missing WHOOP_CLIENT_ID/WHOOP_CLIENT_SECRET');
-  const b64 = Buffer.from(`${cid}:${cs}`).toString('base64');
-  return `Basic ${b64}`;
-}
-
 async function tokenRequest(config: AppConfig, body: URLSearchParams, method: 'basic' | 'post'): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
   const cid = config.WHOOP_CLIENT_ID;

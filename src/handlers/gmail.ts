@@ -39,7 +39,7 @@ export class GmailHandler extends BaseHandler {
   }
 
   async execute(action: string, args: any): Promise<CallToolResult> {
-    const { gmail, reason } = await getGmail(this.config, this.logger);
+    const { gmail } = await getGmail(this.config, this.logger);
     if (!gmail) {
       return { content: [{ type: 'text', text: this.authMessage() }], isError: true };
     }

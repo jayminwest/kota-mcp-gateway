@@ -44,7 +44,7 @@ export class CalendarHandler extends BaseHandler {
   }
 
   async execute(action: string, args: any): Promise<CallToolResult> {
-    const { calendar, reason } = await getCalendar(this.config, this.logger);
+    const { calendar } = await getCalendar(this.config, this.logger);
     if (!calendar) {
       return { content: [{ type: 'text', text: this.authMessage() }], isError: true };
     }

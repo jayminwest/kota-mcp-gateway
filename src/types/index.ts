@@ -9,7 +9,7 @@ export interface ToolSpec {
   outputSchema?: z.ZodRawShape;
 }
 
-export interface HandlerConfig extends AppConfig {}
+export type HandlerConfig = AppConfig;
 
 export interface ToolContext {
   logger: Logger;

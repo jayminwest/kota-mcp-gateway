@@ -7,7 +7,6 @@ import { optionalAuthMiddleware } from './middleware/auth.js';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { z } from 'zod';
 
 import { GmailHandler } from './handlers/gmail.js';
 import { CalendarHandler } from './handlers/calendar.js';
@@ -16,8 +15,8 @@ import { KasaHandler } from './handlers/kasa.js';
 import { KrakenHandler } from './handlers/kraken.js';
 import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
-import { getAuthUrl, handleOAuthCallback, getRedirectUri, loadTokens, getGmail } from './utils/google.js';
-import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens, getWhoopRedirectUri } from './utils/whoop.js';
+import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
+import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
 
 async function main() {
@@ -198,7 +197,6 @@ async function main() {
   for (const handler of handlers) {
     for (const spec of handler.getTools()) {
       const name = `${handler.prefix}_${spec.action}`;
-      const paramsSchema = spec.inputSchema ? z.object(spec.inputSchema) : undefined;
       mcp.registerTool(name, {
         description: spec.description,
         inputSchema: spec.inputSchema,
