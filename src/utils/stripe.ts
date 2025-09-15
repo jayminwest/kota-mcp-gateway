@@ -128,28 +128,53 @@ export async function getCustomersCount(key: string, range: Range, account?: str
 }
 
 export async function getSubscriptionsSummary(key: string, range: Range, account?: string, cap?: { maxPages: number; maxItems: number }) {
+  // Expand only up to price (avoid >4-level expansions)
   const subs = await listAll<any>(key, '/subscriptions', {
     created: { gte: range.from, lte: range.to },
     status: 'all',
-    expand: ['data.items.data.price.product'] as any,
+    expand: ['data.items.data.price'] as any,
   }, account, cap);
   const active = subs.filter((s: any) => s.status === 'active').length;
-  const byProduct: Record<string, number> = {};
+  const byProductId: Record<string, number> = {};
   for (const s of subs) {
     const items = s.items?.data || [];
     for (const it of items) {
       const product = it.price?.product;
-      let name = '';
-      if (typeof product === 'string') name = product;
-      else if (product && typeof product === 'object') name = product.name || product.id || '';
-      if (!name) name = it.price?.id || 'unknown';
-      byProduct[name] = (byProduct[name] || 0) + 1;
+      let id = '';
+      if (typeof product === 'string') id = product;
+      else if (product && typeof product === 'object') id = product.id || '';
+      if (!id) id = it.price?.id || 'unknown';
+      byProductId[id] = (byProductId[id] || 0) + 1;
     }
   }
+  // Resolve top product names (best-effort) to keep output friendly
   const totalCount = subs.length;
+  const sortedIds = Object.entries(byProductId).sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const topIds = sortedIds.filter((id) => id.startsWith('prod_')).slice(0, 20);
+  const nameMap: Record<string, string> = await fetchProductNamesSafe(key, account, topIds);
+  const byProduct: Record<string, number> = {};
+  for (const [id, count] of Object.entries(byProductId)) {
+    const label = nameMap[id] ? `${nameMap[id]} (${id})` : id;
+    byProduct[label] = (byProduct[label] || 0) + count;
+  }
   return { totalCount, activeCount: active, byProduct };
 }
 
 export function cents(amount: number): string {
   return (amount / 100).toFixed(2);
+}
+
+async function fetchProductNamesSafe(key: string, account: string | undefined, ids: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (!ids.length) return out;
+  try {
+    const resp = await stripeGet<any>(key, '/products', { ids }, account);
+    const arr = resp?.data || [];
+    for (const p of arr) {
+      if (p?.id) out[p.id] = p.name || p.id;
+    }
+  } catch {
+    // best-effort; ignore errors and return empty map
+  }
+  return out;
 }
