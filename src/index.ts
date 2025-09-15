@@ -195,6 +195,159 @@ async function main() {
     }
   }
 
+  // Help resources (read-only)
+  function registerHelpResource(name: string, uri: string, text: string) {
+    mcp.resource(name, uri, async (u) => ({
+      contents: [
+        { uri: u.toString(), text },
+      ],
+    }));
+  }
+
+  registerHelpResource(
+    'kota_help_index',
+    'help://kota',
+    [
+      'KOTA MCP Help Index',
+      '',
+      'General:',
+      '- Use typed tools when available (e.g., rize_get_client_time_spent, whoop_get_recovery).',
+      '- For raw GraphQL (Rize), call rize_introspect first to learn fields; then rize_execute_query.',
+      '- WHOOP: paginate with { limit, start, end, all, max_pages, max_items } to manage sizes.',
+      '- Auth routes: /auth/google/start, /auth/whoop/start, and /auth/*/status.',
+      '',
+      'Help URIs:',
+      '- help://rize/usage',
+      '- help://whoop/usage',
+      '- help://kraken/usage',
+      '- help://google/usage',
+    ].join('\n')
+  );
+
+  registerHelpResource(
+    'rize_help_usage',
+    'help://rize/usage',
+    [
+      'Rize Help',
+      '',
+      'Typed tools:',
+      '- rize_get_current_user {}',
+      '- rize_list_projects { first?: number }',
+      '- rize_list_tasks { first?: number }',
+      '- rize_list_client_time_entries { startTime, endTime, client_name?, limit? }',
+      '- rize_get_client_time_spent { startTime, endTime, client_name }',
+      '',
+      'Raw GraphQL:',
+      '- rize_introspect { partial?: boolean }',
+      '- rize_execute_query { query, variables? }',
+    ].join('\n')
+  );
+
+  registerHelpResource(
+    'whoop_help_usage',
+    'help://whoop/usage',
+    [
+      'WHOOP Help (v2)',
+      '',
+      'Common list tools:',
+      '- whoop_get_recovery { start?, end?, limit?, next_token?, all?, max_pages?, max_items? }',
+      '- whoop_get_sleep { ... }',
+      '- whoop_get_workouts { ... }',
+      '- whoop_get_cycles { ... }',
+      'By-ID:',
+      '- whoop_get_sleep_by_id { sleep_id }',
+      '- whoop_get_workout_by_id { workout_id }',
+      '- whoop_get_cycle_by_id { cycle_id }',
+      '- whoop_get_cycle_recovery { cycle_id }',
+      '- whoop_get_cycle_sleep { cycle_id }',
+    ].join('\n')
+  );
+
+  registerHelpResource(
+    'kraken_help_usage',
+    'help://kraken/usage',
+    [
+      'Kraken Help',
+      '',
+      'Tools:',
+      '- kraken_get_ticker { pair }  (public)',
+      '- kraken_get_balance {}       (requires KRAKEN_API_KEY/SECRET)',
+      '',
+      'Status:',
+      '- GET /auth/kraken/status → { hasKey, hasSecret, authorized }',
+    ].join('\n')
+  );
+
+  registerHelpResource(
+    'google_help_usage',
+    'help://google/usage',
+    [
+      'Google (Gmail + Calendar) Help',
+      '',
+      'Auth routes:',
+      '- /auth/google/start → browser consent',
+      '- /auth/google/status → token status',
+      '',
+      'Gmail tools:',
+      '- gmail_list_messages { query?, max_results? }',
+      '- gmail_send_message { to, subject?, body? }',
+      '- gmail_create_draft { to, subject?, body? }',
+      '',
+      'Calendar tools:',
+      '- calendar_list_events { start?, end?, max_results? }',
+      '- calendar_create_event { title, start, end, description?, attendees? }',
+      '- calendar_update_event { id, title?, start?, end?, description? }',
+    ].join('\n')
+  );
+
+  // Prompts (examples and quick usage tips)
+  mcp.prompt('rize.examples', 'Examples for Rize usage', async () => ({
+    description: 'Ready-to-use Rize examples',
+    messages: [
+      {
+        role: 'assistant',
+        content: { type: 'text', text: [
+          'Examples:',
+          '- rize_get_current_user {}',
+          '- rize_list_projects { "first": 5 }',
+          '- rize_get_client_time_spent { "client_name": "Acme", "startTime": "2025-09-01T00:00:00Z", "endTime": "2025-09-30T23:59:59Z" }',
+          '- rize_execute_query { "query": "query { currentUser { name email } }" }',
+        ].join('\n') },
+      },
+    ],
+  }));
+
+  mcp.prompt('whoop.examples', 'Examples for WHOOP usage', async () => ({
+    description: 'WHOOP pagination and by-ID examples',
+    messages: [
+      {
+        role: 'assistant',
+        content: { type: 'text', text: [
+          'Examples:',
+          '- whoop_get_recovery { "limit": 25, "all": true, "max_pages": 3, "max_items": 60 }',
+          '- whoop_get_sleep_by_id { "sleep_id": "...uuid..." }',
+          '- whoop_get_cycle_recovery { "cycle_id": 123456 }',
+        ].join('\n') },
+      },
+    ],
+  }));
+
+  mcp.prompt('kraken.examples', 'Examples for Kraken usage', async () => ({
+    description: 'Kraken quick examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'kraken_get_ticker { "pair": "XBTUSD" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kraken_get_balance {}' } },
+    ],
+  }));
+
+  mcp.prompt('google.examples', 'Examples for Gmail and Calendar', async () => ({
+    description: 'Google tools examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'gmail_list_messages { "query": "is:unread", "max_results": 10 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'calendar_list_events { "start": "2025-09-15T00:00:00Z", "end": "2025-09-22T00:00:00Z", "max_results": 10 }' } },
+    ],
+  }));
+
   // Connect after tools are registered
   await mcp.connect(transport);
 
