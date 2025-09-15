@@ -10,6 +10,8 @@ const RangeShape = {
   limit: z.number().int().positive().max(25).default(10).optional(),
   next_token: z.string().optional(),
   all: z.boolean().default(false).optional(),
+  max_pages: z.number().int().positive().max(100).default(10).optional(),
+  max_items: z.number().int().positive().max(1000).default(50).optional(),
 };
 
 export class WhoopHandler extends BaseHandler {
@@ -96,6 +98,8 @@ export class WhoopHandler extends BaseHandler {
       limit: args?.limit,
       nextToken: args?.next_token,
       all: args?.all,
+      maxPages: args?.max_pages,
+      maxItems: args?.max_items,
     };
   }
 

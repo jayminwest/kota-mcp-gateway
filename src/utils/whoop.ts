@@ -169,19 +169,27 @@ export class WhoopClient {
     return res.json();
   }
 
-  async paginate(path: string, params: { start?: string; end?: string; limit?: number; nextToken?: string; all?: boolean }) {
+  async paginate(path: string, params: { start?: string; end?: string; limit?: number; nextToken?: string; all?: boolean; maxPages?: number; maxItems?: number }) {
     const limit = params.limit ?? 10;
+    const maxPages = params.maxPages ?? 10;
+    const maxItems = params.maxItems ?? 50;
     const out: any[] = [];
     let nextToken = params.nextToken;
-    let count = 0;
+    let pages = 0;
     do {
       const q: any = { limit, start: params.start, end: params.end, nextToken };
       const data = await this.request(path, q);
       const items = data?.records || data?.sleep || data?.workouts || data?.cycles || data?.recoveries || [];
-      if (Array.isArray(items)) out.push(...items);
+      if (Array.isArray(items)) {
+        for (const it of items) {
+          if (out.length >= maxItems) break;
+          out.push(it);
+        }
+      }
       nextToken = data?.next_token || data?.nextToken || null;
-      count++;
-    } while (params.all && nextToken && count < 100);
+      pages++;
+      if (out.length >= maxItems) break;
+    } while (params.all && nextToken && pages < maxPages);
     return { items: out, nextToken };
   }
 
