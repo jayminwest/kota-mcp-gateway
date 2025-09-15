@@ -48,6 +48,19 @@ Docker
   - `./data:/app/data`
   - `~/.kota:/root/.kota:ro`
 
+Rebuild and Restart (quick commands)
+- Rebuild image and start fresh (best after code changes):
+  - `docker-compose up -d --build`
+- Restart container without rebuild (best after .env changes):
+  - `docker-compose restart`
+- Rebuild without cache (force full rebuild):
+  - `docker-compose build --no-cache && docker-compose up -d`
+- View logs:
+  - `docker-compose logs -f`
+- Health checks:
+  - `curl http://localhost:3000/health`
+  - `curl http://localhost:3000/auth/google/status`
+
 Adding New Handlers
 1. Create a class extending `BaseHandler` in `src/handlers/`.
 2. Implement `prefix`, `getTools()`, and `execute(action, args)`.
@@ -57,4 +70,3 @@ Adding New Handlers
 Notes
 - Initial release stubs most external APIs; expands incrementally per PRD phases.
 - Knowledge base tools read/write under `KNOWLEDGE_BASE_PATH` (default `/app/data/knowledge`).
-
