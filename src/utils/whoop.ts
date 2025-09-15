@@ -45,7 +45,7 @@ export function getWhoopRedirectUri(config: AppConfig) {
   return config.WHOOP_REDIRECT_URI || 'http://localhost:3000/auth/whoop/callback';
 }
 
-export function getWhoopAuthUrl(config: AppConfig) {
+export function getWhoopAuthUrl(config: AppConfig, state?: string) {
   const cid = config.WHOOP_CLIENT_ID;
   if (!cid) throw new Error('Missing WHOOP_CLIENT_ID');
   const qs = new URLSearchParams({
@@ -61,6 +61,7 @@ export function getWhoopAuthUrl(config: AppConfig) {
       'read:cycles',
     ].join(' '),
   });
+  if (state && state.length >= 8) qs.set('state', state);
   return `${AUTH_URL}?${qs.toString()}`;
 }
 
@@ -72,50 +73,49 @@ async function basicAuthHeader(config: AppConfig) {
   return `Basic ${b64}`;
 }
 
-export async function exchangeWhoopCode(config: AppConfig, code: string): Promise<WhoopTokens> {
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: getWhoopRedirectUri(config),
-  });
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': await basicAuthHeader(config),
-    },
-    body: body.toString(),
-  } as any);
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`WHOOP token exchange failed: ${res.status} ${txt}`);
+async function tokenRequest(config: AppConfig, body: URLSearchParams, method: 'basic' | 'post'): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  const cid = config.WHOOP_CLIENT_ID;
+  const cs = config.WHOOP_CLIENT_SECRET;
+  if (!cid || !cs) throw new Error('Missing WHOOP_CLIENT_ID/WHOOP_CLIENT_SECRET');
+  const payload = new URLSearchParams(body);
+  if (method === 'basic') {
+    const b64 = Buffer.from(`${cid}:${cs}`).toString('base64');
+    headers['Authorization'] = `Basic ${b64}`;
+  } else {
+    payload.set('client_id', cid);
+    payload.set('client_secret', cs);
   }
-  const tokens = (await res.json()) as WhoopTokens;
+  return fetch(TOKEN_URL, { method: 'POST', headers, body: payload.toString() } as any);
+}
+
+async function tokenRequestWithFallback(config: AppConfig, body: URLSearchParams): Promise<WhoopTokens> {
+  const pref = (config.WHOOP_TOKEN_AUTH_METHOD as 'basic' | 'post' | undefined) || undefined;
+  const order: ('basic' | 'post')[] = pref ? [pref] : ['basic', 'post'];
+  let lastTxt = '';
+  for (const method of order) {
+    const res = await tokenRequest(config, body, method);
+    if (res.ok) return (await res.json()) as WhoopTokens;
+    const txt = await res.text().catch(() => '');
+    lastTxt = txt;
+    if (res.status === 401 && /invalid_client/i.test(txt)) continue;
+    throw new Error(`${res.status} ${txt}`);
+  }
+  throw new Error(`401 ${lastTxt || 'invalid_client'}`);
+}
+
+export async function exchangeWhoopCode(config: AppConfig, code: string): Promise<WhoopTokens> {
+  const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: getWhoopRedirectUri(config) });
+  const tokens = await tokenRequestWithFallback(config, body);
   if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
   await saveWhoopTokens(config, tokens);
   return tokens;
 }
 
 export async function refreshWhoopToken(config: AppConfig, refresh_token: string): Promise<WhoopTokens> {
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token,
-  });
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': await basicAuthHeader(config),
-    },
-    body: body.toString(),
-  } as any);
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`WHOOP token refresh failed: ${res.status} ${txt}`);
-  }
-  const tokens = (await res.json()) as WhoopTokens;
+  const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token });
+  const tokens = await tokenRequestWithFallback(config, body);
   if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
-  // Preserve existing refresh_token if not provided
   const existing = await loadWhoopTokens(config);
   if (!tokens.refresh_token && existing?.refresh_token) tokens.refresh_token = existing.refresh_token;
   await saveWhoopTokens(config, tokens);
