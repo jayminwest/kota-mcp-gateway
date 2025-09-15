@@ -154,8 +154,8 @@ async function main() {
       let error: string | undefined;
       if (hasUser && hasPass) {
         try {
-          const { KasaClient } = await import('./utils/kasa.js');
-          const kasa = new KasaClient(config);
+          const { getKasaClient } = await import('./utils/kasa.js');
+          const kasa = getKasaClient(config);
           devices = await kasa.getDeviceList();
         } catch (e: any) {
           error = e?.message || String(e);

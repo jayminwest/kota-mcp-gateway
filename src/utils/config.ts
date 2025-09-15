@@ -32,6 +32,8 @@ const ConfigSchema = z.object({
 
   KASA_USERNAME: z.string().optional(),
   KASA_PASSWORD: z.string().optional(),
+  KASA_LAN_ONLY: z.string().optional(),
+  KASA_LAN_DISCOVERY_MS: z.coerce.number().optional(),
 
   KRAKEN_API_KEY: z.string().optional(),
   KRAKEN_API_SECRET: z.string().optional(),

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { AppConfig } from './config.js';
@@ -31,7 +32,7 @@ export async function saveKasaToken(config: AppConfig, token: KasaToken) {
   await fs.writeFile(file, JSON.stringify(token, null, 2), 'utf8');
 }
 
-export class KasaClient {
+export class KasaCloudClient {
   private username?: string;
   private password?: string;
   private token?: string;
@@ -171,4 +172,71 @@ export class KasaClient {
     }
     return inner;
   }
+}
+
+export class KasaLanClient {
+  private discoveryMs: number;
+  private client: any;
+  private require = createRequire(import.meta.url);
+  constructor(private config: AppConfig) {
+    const lib = this.require('tplink-smarthome-api');
+    this.client = new lib.Client();
+    this.discoveryMs = Number(config.KASA_LAN_DISCOVERY_MS || 3000);
+  }
+
+  private async discover(): Promise<any[]> {
+    const devices: any[] = [];
+    const discovery = this.client.startDiscovery();
+    discovery.on('device-new', (d: any) => { devices.push(d); });
+    await new Promise((r) => setTimeout(r, this.discoveryMs));
+    discovery.stop();
+    return devices;
+  }
+
+  private async findDevice(idOrAlias: string): Promise<any> {
+    const list = await this.discover();
+    for (const d of list) {
+      if (d.deviceId === idOrAlias || d.alias === idOrAlias) return d;
+    }
+    throw new Error(`Device not found: ${idOrAlias}`);
+  }
+
+  async getDeviceList(): Promise<any[]> {
+    const list = await this.discover();
+    return list.map((d: any) => ({ deviceId: d.deviceId, alias: d.alias, deviceModel: d.model, status: d.relayState ?? d.lightingState?.on_off }));
+  }
+
+  async setPowerState(deviceIdOrAlias: string, state: boolean) {
+    const d = await this.findDevice(deviceIdOrAlias);
+    if (typeof d.setPowerState === 'function') return d.setPowerState(state);
+    if (d.lighting && d.lighting.setLightState) return d.lighting.setLightState({ on_off: state ? 1 : 0 });
+    // try generic
+    if (d.setPowerState) return d.setPowerState(state);
+    throw new Error('Device does not support power state');
+  }
+
+  async setBulbState(deviceIdOrAlias: string, state: { on_off?: number; brightness?: number; hue?: number; saturation?: number; color_temp?: number; transition_period?: number }) {
+    const d = await this.findDevice(deviceIdOrAlias);
+    if (!d.lighting || !d.lighting.setLightState) throw new Error('Device is not a bulb or lacks lighting controls');
+    return d.lighting.setLightState({ ...state });
+  }
+}
+
+export function getKasaClient(config: AppConfig) {
+  const lanOnly = String(config.KASA_LAN_ONLY || '').toLowerCase() === 'true';
+  if (lanOnly) return new KasaLanClient(config);
+  // Prefer LAN first; fallback to cloud
+  return new (class {
+    lan = new KasaLanClient(config);
+    cloud = new KasaCloudClient(config);
+    async getDeviceList() {
+      try { return await this.lan.getDeviceList(); } catch { return await this.cloud.getDeviceList(); }
+    }
+    async setPowerState(id: string, s: boolean) {
+      try { return await this.lan.setPowerState(id, s); } catch { return await this.cloud.setPowerState(id, s); }
+    }
+    async setBulbState(id: string, st: any) {
+      try { return await this.lan.setBulbState(id, st); } catch { return await this.cloud.setBulbState(id, st); }
+    }
+  })();
 }

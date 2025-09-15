@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
-import { KasaClient } from '../utils/kasa.js';
+import { getKasaClient } from '../utils/kasa.js';
 
 export class KasaHandler extends BaseHandler {
   readonly prefix = 'kasa';
@@ -57,7 +57,7 @@ export class KasaHandler extends BaseHandler {
 
   async execute(action: string, args: any): Promise<CallToolResult> {
     try {
-      const client = new KasaClient(this.config);
+      const client = getKasaClient(this.config);
       switch (action) {
         case 'list_devices': {
           const list = await client.getDeviceList();
