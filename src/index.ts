@@ -149,6 +149,14 @@ async function main() {
   const mcp = new McpServer({
     name: 'kota-gateway',
     version: '1.0.0',
+  }, {
+    instructions: [
+      'KOTA MCP Gateway usage:',
+      '- Prefer typed tools when available (e.g., rize_get_client_time_spent, whoop_get_recovery).',
+      '- For Rize GraphQL, first call rize_introspect to learn fields; then use rize_execute_query.',
+      '- WHOOP v2 endpoints are paginated. Use limit/start/end and control page size via max_pages/max_items.',
+      '- Google: authorize via /auth/google/start; WHOOP: /auth/whoop/start; status routes available under /auth/*/status.',
+    ].join('\n')
   });
 
   // Create transport for Streamable HTTP
