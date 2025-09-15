@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
+import { RizeClient } from '../utils/rize.js';
 
 export class RizeHandler extends BaseHandler {
   readonly prefix = 'rize';
@@ -9,28 +10,45 @@ export class RizeHandler extends BaseHandler {
   getTools(): ToolSpec[] {
     return [
       {
-        action: 'get_summary',
-        description: 'Get time tracking summary for a date range',
+        action: 'execute_query',
+        description: 'Execute a GraphQL query against Rize',
         inputSchema: {
-          start: z.string().describe('ISO start time'),
-          end: z.string().describe('ISO end time'),
+          query: z.string().describe('GraphQL query string'),
+          variables: z.record(z.any()).optional(),
         },
       },
       {
-        action: 'log_focus',
-        description: 'Log a focus session with duration (minutes)',
+        action: 'introspect',
+        description: 'Run GraphQL introspection (schema metadata)',
         inputSchema: {
-          topic: z.string().describe('Focus topic'),
-          minutes: z.number().int().positive(),
+          partial: z.boolean().default(true).optional(),
         },
       },
     ];
   }
 
   async execute(action: string, args: any): Promise<CallToolResult> {
-    const msg = `rize_${action} not implemented yet`;
-    this.logger.info({ action, args }, msg);
-    return { content: [{ type: 'text', text: `${msg}. Echo args: ${JSON.stringify(args)}` }], isError: false };
+    try {
+      const client = new RizeClient(this.config);
+      switch (action) {
+        case 'execute_query': {
+          const data = await client.query(String(args?.query), args?.variables || {});
+          return this.json(data);
+        }
+        case 'introspect': {
+          const data = await client.introspect(Boolean(args?.partial ?? true));
+          return this.json(data);
+        }
+        default:
+          return { content: [{ type: 'text', text: `Unknown action: ${action}` }], isError: true };
+      }
+    } catch (err: any) {
+      this.logger.error({ err, action }, 'Rize error');
+      return { content: [{ type: 'text', text: `Rize error: ${err?.message || String(err)}` }], isError: true };
+    }
+  }
+
+  private json(obj: any): CallToolResult {
+    return { content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] };
   }
 }
-
