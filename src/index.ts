@@ -20,6 +20,7 @@ import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
 import { getAuthUrl, handleOAuthCallback, getRedirectUri, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens, getWhoopRedirectUri } from './utils/whoop.js';
+import { KrakenClient } from './utils/kraken.js';
 
 async function main() {
   const config = loadConfig();
@@ -114,6 +115,33 @@ async function main() {
         profile = await client.getProfileBasic();
       } catch {}
       res.json({ authenticated: true, profile, token_type: tokens?.token_type || (config.WHOOP_API_KEY ? 'Bearer' : undefined), expiry_date: tokens?.expiry_date, scope: tokens?.scope });
+    } catch (err) { next(err); }
+  });
+
+  // Kraken status: report env presence and auth check
+  app.get('/auth/kraken/status', async (req, res, next) => {
+    try {
+      const hasKey = Boolean(config.KRAKEN_API_KEY);
+      const hasSecret = Boolean(config.KRAKEN_API_SECRET);
+      let authorized: boolean | undefined;
+      let error: string | undefined;
+      if (hasKey && hasSecret) {
+        try {
+          const k = new KrakenClient(config);
+          // Attempt a lightweight private call to verify credentials
+          await k.getBalance();
+          authorized = true;
+        } catch (e: any) {
+          authorized = false;
+          error = e?.message || String(e);
+        }
+      }
+      res.json({
+        hasKey,
+        hasSecret,
+        authorized,
+        ...(error ? { error } : {}),
+      });
     } catch (err) { next(err); }
   });
 
