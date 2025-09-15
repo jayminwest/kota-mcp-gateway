@@ -12,6 +12,7 @@ Features
 Project Structure
 - `src/index.ts` – main server and MCP transport
 - `src/handlers/*` – service handlers (Gmail, Calendar, Whoop, Kraken, Rize, Kasa, Slack)
+  - Also: GitHub (activity summaries)
 - `src/utils/*` – config and logger
 - `src/middleware/*` – error and optional auth middleware
 - `scripts/*` – healthcheck and macOS launchd installer
@@ -27,6 +28,7 @@ Setup
 Endpoints
 - `GET /health` – returns `{ status: 'ok', ... }`
 - `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport
+ - `GET /auth/github/status` – GitHub token and rate status
 
 MCP Client Config
 {

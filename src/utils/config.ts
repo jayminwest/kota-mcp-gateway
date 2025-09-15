@@ -42,6 +42,10 @@ const ConfigSchema = z.object({
   SLACK_SIGNING_SECRET: z.string().optional(),
 
   MCP_AUTH_TOKEN: z.string().optional(),
+
+  // GitHub
+  GITHUB_TOKEN: z.string().optional(),
+  GITHUB_USERNAME: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

@@ -15,6 +15,7 @@ import { KasaHandler } from './handlers/kasa.js';
 import { KrakenHandler } from './handlers/kraken.js';
 import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
+import { GitHubHandler } from './handlers/github.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -162,6 +163,21 @@ async function main() {
     } catch (err) { next(err); }
   });
 
+  // GitHub status: token presence + viewer + rate limit
+  app.get('/auth/github/status', async (req, res, next) => {
+    try {
+      const { GITHUB_TOKEN } = config;
+      if (!GITHUB_TOKEN) return res.json({ authenticated: false });
+      try {
+        const { getRateStatus } = await import('./utils/github.js');
+        const data = await getRateStatus(GITHUB_TOKEN);
+        res.json({ authenticated: true, login: data.viewer?.login, rateLimit: data.rateLimit });
+      } catch (e: any) {
+        return res.json({ authenticated: false, error: e?.message || String(e) });
+      }
+    } catch (err) { next(err); }
+  });
+
   // MCP server
   const mcp = new McpServer({
     name: 'kota-gateway',
@@ -192,6 +208,7 @@ async function main() {
     make(KrakenHandler),
     make(RizeHandler),
     make(SlackHandler),
+    make(GitHubHandler),
   ];
 
   for (const handler of handlers) {
@@ -206,6 +223,7 @@ async function main() {
         logger.debug({ tool: name, args, sessionId: extra?.sessionId }, 'Tool executed');
         return res;
       });
+      logger.info({ tool: name, prefix: handler.prefix }, 'Tool registered');
     }
   }
 
@@ -235,6 +253,7 @@ async function main() {
       '- help://whoop/usage',
       '- help://kraken/usage',
       '- help://google/usage',
+      '- help://github/usage',
     ].join('\n')
   );
 
@@ -314,6 +333,24 @@ async function main() {
     ].join('\n')
   );
 
+  registerHelpResource(
+    'github_help_usage',
+    'help://github/usage',
+    [
+      'GitHub Help',
+      '',
+      'Auth/status:',
+      '- Set GITHUB_TOKEN in .env; optional GITHUB_USERNAME to target a user.',
+      '- GET /auth/github/status → { authenticated, login, rateLimit }',
+      '',
+      'Tools:',
+      '- github_activity_summary { start?, end?, detail?: "numbers"|"titles"|"full", username?, max_items? }',
+      '',
+      'Notes:',
+      '- Uses GitHub GraphQL contributions; commit messages are not listed. PRs/issues and mentions are included.',
+    ].join('\n')
+  );
+
   // Prompts (examples and quick usage tips)
   mcp.prompt('rize.examples', 'Examples for Rize usage', async () => ({
     description: 'Ready-to-use Rize examples',
@@ -359,6 +396,14 @@ async function main() {
     messages: [
       { role: 'assistant', content: { type: 'text', text: 'gmail_list_messages { "query": "is:unread", "max_results": 10 }' } },
       { role: 'assistant', content: { type: 'text', text: 'calendar_list_events { "start": "2025-09-15T00:00:00Z", "end": "2025-09-22T00:00:00Z", "max_results": 10 }' } },
+    ],
+  }));
+
+  mcp.prompt('github.examples', 'Examples for GitHub activity', async () => ({
+    description: 'GitHub activity summary examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'github_activity_summary { "detail": "numbers" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'github_activity_summary { "start": "2025-09-01", "end": "2025-09-15", "detail": "titles", "max_items": 10 }' } },
     ],
   }));
 
