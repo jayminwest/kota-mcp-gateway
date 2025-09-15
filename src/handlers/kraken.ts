@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
+import { KrakenClient } from '../utils/kraken.js';
 
 export class KrakenHandler extends BaseHandler {
   readonly prefix = 'kraken';
@@ -24,9 +25,24 @@ export class KrakenHandler extends BaseHandler {
   }
 
   async execute(action: string, args: any): Promise<CallToolResult> {
-    const msg = `kraken_${action} not implemented yet`;
-    this.logger.info({ action, args }, msg);
-    return { content: [{ type: 'text', text: `${msg}. Echo args: ${JSON.stringify(args)}` }], isError: false };
+    try {
+      const client = new KrakenClient(this.config);
+      switch (action) {
+        case 'get_ticker': {
+          const pair = String(args?.pair || 'XBTUSD');
+          const data = await client.getTicker(pair);
+          return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+        }
+        case 'get_balance': {
+          const data = await client.getBalance();
+          return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+        }
+        default:
+          return { content: [{ type: 'text', text: `Unknown action: ${action}` }], isError: true };
+      }
+    } catch (err: any) {
+      this.logger.error({ err, action }, 'Kraken error');
+      return { content: [{ type: 'text', text: `Kraken error: ${err?.message || String(err)}` }], isError: true };
+    }
   }
 }
-
