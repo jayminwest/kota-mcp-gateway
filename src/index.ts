@@ -18,7 +18,7 @@ import { KnowledgeOrgHandler } from './handlers/knowledge-org.js';
 import { KrakenHandler } from './handlers/kraken.js';
 import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
-import { getAuthUrl, handleOAuthCallback, getRedirectUri } from './utils/google.js';
+import { getAuthUrl, handleOAuthCallback, getRedirectUri, loadTokens, getGmail } from './utils/google.js';
 
 async function main() {
   const config = loadConfig();
@@ -48,6 +48,29 @@ async function main() {
       if (!code) return res.status(400).send('Missing code');
       await handleOAuthCallback(config, code, logger);
       res.send('Google authentication successful. You can close this window.');
+    } catch (err) { next(err); }
+  });
+
+  // Minimal token/status endpoint
+  app.get('/auth/google/status', async (req, res, next) => {
+    try {
+      const tokens = await loadTokens(config);
+      if (!tokens) return res.json({ authenticated: false });
+      let email: string | undefined;
+      try {
+        const { gmail } = await getGmail(config, logger);
+        if (gmail) {
+          const profile = await gmail.users.getProfile({ userId: 'me' });
+          email = profile.data.emailAddress || undefined;
+        }
+      } catch {}
+      res.json({
+        authenticated: true,
+        email,
+        expiry_date: tokens.expiry_date,
+        scope: tokens.scope,
+        token_type: tokens.token_type,
+      });
     } catch (err) { next(err); }
   });
 
