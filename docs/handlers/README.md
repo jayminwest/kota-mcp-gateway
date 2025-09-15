@@ -7,6 +7,7 @@ Handlers Index
 - WHOOP (v2 API): WHOOP.md
 - Kraken (Crypto): KRAKEN.md
 - Rize (GraphQL API): RIZE.md
+- Adding New Handlers: ADDING_HANDLERS.md
 
 Common Concepts
 - Config: Populate required env vars in `.env` (see `.env.example`).
