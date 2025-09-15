@@ -19,7 +19,9 @@ async function stripeGet<T = any>(key: string, path: string, search?: Params, ac
       if (typeof v === 'object' && !Array.isArray(v)) {
         for (const [ck, cv] of Object.entries(v)) url.searchParams.set(`${k}[${ck}]`, String(cv));
       } else if (Array.isArray(v)) {
-        for (const val of v) url.searchParams.append(k, String(val));
+        // Stripe expects array params in bracket form: expand[]=a&expand[]=b
+        const arrKey = `${k}[]`;
+        for (const val of v) url.searchParams.append(arrKey, String(val));
       } else {
         url.searchParams.set(k, String(v));
       }
