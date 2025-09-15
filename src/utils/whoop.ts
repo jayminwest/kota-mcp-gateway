@@ -1,15 +1,148 @@
 import { URLSearchParams } from 'node:url';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import type { AppConfig } from './config.js';
 
 const BASE_URL = 'https://api.prod.whoop.com';
+const AUTH_URL = 'https://api.prod.whoop.com/oauth/oauth2/auth';
+const TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token';
+
+export type WhoopTokens = {
+  access_token: string;
+  token_type: string;
+  scope?: string;
+  expires_in?: number;
+  expiry_date?: number; // ms since epoch
+  refresh_token?: string;
+};
+
+function tokensPath(config: AppConfig) {
+  const dir = path.resolve(config.DATA_DIR, 'whoop');
+  return { dir, file: path.join(dir, 'tokens.json') };
+}
+
+export async function ensureDir(p: string) {
+  await fs.mkdir(p, { recursive: true });
+}
+
+export async function loadWhoopTokens(config: AppConfig): Promise<WhoopTokens | null> {
+  const { file } = tokensPath(config);
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveWhoopTokens(config: AppConfig, tokens: WhoopTokens) {
+  const { dir, file } = tokensPath(config);
+  await ensureDir(dir);
+  await fs.writeFile(file, JSON.stringify(tokens, null, 2), 'utf8');
+}
+
+export function getWhoopRedirectUri(config: AppConfig) {
+  return config.WHOOP_REDIRECT_URI || 'http://localhost:3000/auth/whoop/callback';
+}
+
+export function getWhoopAuthUrl(config: AppConfig) {
+  const cid = config.WHOOP_CLIENT_ID;
+  if (!cid) throw new Error('Missing WHOOP_CLIENT_ID');
+  const qs = new URLSearchParams({
+    response_type: 'code',
+    client_id: cid,
+    redirect_uri: getWhoopRedirectUri(config),
+    scope: [
+      'read:profile',
+      'read:body_measurement',
+      'read:recovery',
+      'read:sleep',
+      'read:workout',
+      'read:cycles',
+    ].join(' '),
+  });
+  return `${AUTH_URL}?${qs.toString()}`;
+}
+
+async function basicAuthHeader(config: AppConfig) {
+  const cid = config.WHOOP_CLIENT_ID;
+  const cs = config.WHOOP_CLIENT_SECRET;
+  if (!cid || !cs) throw new Error('Missing WHOOP_CLIENT_ID/WHOOP_CLIENT_SECRET');
+  const b64 = Buffer.from(`${cid}:${cs}`).toString('base64');
+  return `Basic ${b64}`;
+}
+
+export async function exchangeWhoopCode(config: AppConfig, code: string): Promise<WhoopTokens> {
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: getWhoopRedirectUri(config),
+  });
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': await basicAuthHeader(config),
+    },
+    body: body.toString(),
+  } as any);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`WHOOP token exchange failed: ${res.status} ${txt}`);
+  }
+  const tokens = (await res.json()) as WhoopTokens;
+  if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
+  await saveWhoopTokens(config, tokens);
+  return tokens;
+}
+
+export async function refreshWhoopToken(config: AppConfig, refresh_token: string): Promise<WhoopTokens> {
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token,
+  });
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': await basicAuthHeader(config),
+    },
+    body: body.toString(),
+  } as any);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`WHOOP token refresh failed: ${res.status} ${txt}`);
+  }
+  const tokens = (await res.json()) as WhoopTokens;
+  if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
+  // Preserve existing refresh_token if not provided
+  const existing = await loadWhoopTokens(config);
+  if (!tokens.refresh_token && existing?.refresh_token) tokens.refresh_token = existing.refresh_token;
+  await saveWhoopTokens(config, tokens);
+  return tokens;
+}
+
+async function ensureAccessToken(config: AppConfig): Promise<string> {
+  // If raw API key is provided, use it
+  if (config.WHOOP_API_KEY) return config.WHOOP_API_KEY;
+  // Else use stored OAuth tokens
+  const current = await loadWhoopTokens(config);
+  if (!current?.access_token) throw new Error('WHOOP not authenticated. Visit /auth/whoop/start');
+  const margin = 60_000; // 60s margin
+  if (current.expiry_date && current.expiry_date - margin > Date.now()) {
+    return current.access_token;
+  }
+  if (!current.refresh_token) return current.access_token; // try anyway
+  const refreshed = await refreshWhoopToken(config, current.refresh_token);
+  return refreshed.access_token;
+}
 
 export class WhoopClient {
-  private token: string;
+  constructor(private config: AppConfig) {}
 
-  constructor(private config: AppConfig) {
-    const t = config.WHOOP_API_KEY;
-    if (!t) throw new Error('Missing WHOOP_API_KEY');
-    this.token = t;
+  private async authHeader() {
+    const token = await ensureAccessToken(this.config);
+    return { 'Authorization': `Bearer ${token}` };
   }
 
   async request(path: string, query?: Record<string, any>, init?: RequestInit): Promise<any> {
@@ -21,14 +154,12 @@ export class WhoopClient {
       }
     }
     const u = `${BASE_URL}${path}${qs.toString() ? `?${qs}` : ''}`;
-    const res = await fetch(u, {
-      method: init?.method || 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Accept': 'application/json',
-      },
-      ...init,
-    } as any);
+    const headers = {
+      'Accept': 'application/json',
+      ...(await this.authHeader()),
+      ...(init?.headers || {}),
+    } as any;
+    const res = await fetch(u, { method: init?.method || 'GET', headers, ...init } as any);
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error(`WHOOP ${res.status} ${res.statusText}: ${txt}`);
@@ -45,7 +176,7 @@ export class WhoopClient {
     do {
       const q: any = { limit, start: params.start, end: params.end, nextToken };
       const data = await this.request(path, q);
-      const items = data?.records || data?.sleep || data?.workouts || data?.cycles || data?.recoveries || data?.records || [];
+      const items = data?.records || data?.sleep || data?.workouts || data?.cycles || data?.recoveries || [];
       if (Array.isArray(items)) out.push(...items);
       nextToken = data?.next_token || data?.nextToken || null;
       count++;
@@ -62,4 +193,3 @@ export class WhoopClient {
   getCycles(p: any) { return this.paginate('/v2/cycle', p); }
   revokeAccess() { return this.request('/v2/user/access', undefined, { method: 'DELETE' } as any); }
 }
-

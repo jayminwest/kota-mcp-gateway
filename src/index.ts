@@ -19,6 +19,7 @@ import { KrakenHandler } from './handlers/kraken.js';
 import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
 import { getAuthUrl, handleOAuthCallback, getRedirectUri, loadTokens, getGmail } from './utils/google.js';
+import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens, getWhoopRedirectUri } from './utils/whoop.js';
 
 async function main() {
   const config = loadConfig();
@@ -71,6 +72,35 @@ async function main() {
         scope: tokens.scope,
         token_type: tokens.token_type,
       });
+    } catch (err) { next(err); }
+  });
+
+  // WHOOP OAuth endpoints
+  app.get('/auth/whoop/start', async (req, res, next) => {
+    try {
+      const url = getWhoopAuthUrl(config);
+      res.redirect(302, url);
+    } catch (err) { next(err); }
+  });
+  app.get('/auth/whoop/callback', async (req, res, next) => {
+    try {
+      const code = (req.query.code as string) || '';
+      if (!code) return res.status(400).send('Missing code');
+      await exchangeWhoopCode(config, code);
+      res.send('WHOOP authentication successful. You can close this window.');
+    } catch (err) { next(err); }
+  });
+  app.get('/auth/whoop/status', async (req, res, next) => {
+    try {
+      const tokens = await loadWhoopTokens(config);
+      if (!tokens && !config.WHOOP_API_KEY) return res.json({ authenticated: false });
+      let profile: any = undefined;
+      try {
+        const { WhoopClient } = await import('./utils/whoop.js');
+        const client = new WhoopClient(config);
+        profile = await client.getProfileBasic();
+      } catch {}
+      res.json({ authenticated: true, profile, token_type: tokens?.token_type || (config.WHOOP_API_KEY ? 'Bearer' : undefined), expiry_date: tokens?.expiry_date, scope: tokens?.scope });
     } catch (err) { next(err); }
   });
 

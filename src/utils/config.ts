@@ -21,6 +21,9 @@ const ConfigSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().optional(),
 
   WHOOP_API_KEY: z.string().optional(),
+  WHOOP_CLIENT_ID: z.string().optional(),
+  WHOOP_CLIENT_SECRET: z.string().optional(),
+  WHOOP_REDIRECT_URI: z.string().optional(),
 
   PLAID_CLIENT_ID: z.string().optional(),
   PLAID_SECRET: z.string().optional(),
