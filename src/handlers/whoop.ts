@@ -23,7 +23,12 @@ export class WhoopHandler extends BaseHandler {
       { action: 'get_sleep', description: 'List sleeps (paged)', inputSchema: RangeShape },
       { action: 'get_workouts', description: 'List workouts (paged)', inputSchema: RangeShape },
       { action: 'get_cycles', description: 'List cycles (paged)', inputSchema: RangeShape },
-      { action: 'revoke_access', description: 'Revoke access token for this user', inputSchema: {} },
+      // By-ID and cycle subresources
+      { action: 'get_sleep_by_id', description: 'Get a sleep by UUID', inputSchema: { sleep_id: z.string() } },
+      { action: 'get_workout_by_id', description: 'Get a workout by UUID', inputSchema: { workout_id: z.string() } },
+      { action: 'get_cycle_by_id', description: 'Get a cycle by ID', inputSchema: { cycle_id: z.number().int().positive() } },
+      { action: 'get_cycle_recovery', description: 'Get recovery for a cycle', inputSchema: { cycle_id: z.number().int().positive() } },
+      { action: 'get_cycle_sleep', description: 'Get sleep for a cycle', inputSchema: { cycle_id: z.number().int().positive() } },
     ];
   }
 
@@ -55,9 +60,25 @@ export class WhoopHandler extends BaseHandler {
           const data = await client.getCycles(this.toParams(args));
           return this.pagedResult('Cycles', data);
         }
-        case 'revoke_access': {
-          await client.revokeAccess();
-          return { content: [{ type: 'text', text: 'Access revoked (204 No Content)' }] };
+        case 'get_sleep_by_id': {
+          const data = await client.getSleepById(String(args?.sleep_id));
+          return this.jsonResult(data, 'Sleep');
+        }
+        case 'get_workout_by_id': {
+          const data = await client.getWorkoutById(String(args?.workout_id));
+          return this.jsonResult(data, 'Workout');
+        }
+        case 'get_cycle_by_id': {
+          const data = await client.getCycleById(Number(args?.cycle_id));
+          return this.jsonResult(data, 'Cycle');
+        }
+        case 'get_cycle_recovery': {
+          const data = await client.getCycleRecovery(Number(args?.cycle_id));
+          return this.jsonResult(data, 'Cycle Recovery');
+        }
+        case 'get_cycle_sleep': {
+          const data = await client.getCycleSleep(Number(args?.cycle_id));
+          return this.jsonResult(data, 'Cycle Sleep');
         }
         default:
           return { content: [{ type: 'text', text: `Unknown action: ${action}` }], isError: true };

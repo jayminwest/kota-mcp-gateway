@@ -185,12 +185,18 @@ export class WhoopClient {
     return { items: out, nextToken };
   }
 
-  // Specific endpoints
-  getProfileBasic() { return this.request('/developer/v1/user/profile/basic'); }
-  getBodyMeasurement() { return this.request('/developer/v1/user/measurement/body'); }
-  getRecoveries(p: any) { return this.paginate('/developer/v1/recovery', p); }
-  getSleeps(p: any) { return this.paginate('/developer/v1/activity/sleep', p); }
-  getWorkouts(p: any) { return this.paginate('/developer/v1/activity/workout', p); }
-  getCycles(p: any) { return this.paginate('/developer/v1/cycle', p); }
-  revokeAccess() { return this.request('/developer/v1/user/access', undefined, { method: 'DELETE' } as any); }
+  // Specific endpoints (WHOOP v2)
+  getProfileBasic() { return this.request('/v2/user/profile/basic'); }
+  getBodyMeasurement() { return this.request('/v2/user/measurement/body'); }
+  getRecoveries(p: any) { return this.paginate('/v2/recovery', p); }
+  getSleeps(p: any) { return this.paginate('/v2/activity/sleep', p); }
+  getWorkouts(p: any) { return this.paginate('/v2/activity/workout', p); }
+  getCycles(p: any) { return this.paginate('/v2/cycle', p); }
+
+  // By-ID and cycle subresources
+  getSleepById(sleepId: string) { return this.request(`/v2/activity/sleep/${encodeURIComponent(sleepId)}`); }
+  getWorkoutById(workoutId: string) { return this.request(`/v2/activity/workout/${encodeURIComponent(workoutId)}`); }
+  getCycleById(cycleId: number) { return this.request(`/v2/cycle/${cycleId}`); }
+  getCycleRecovery(cycleId: number) { return this.request(`/v2/cycle/${cycleId}/recovery`); }
+  getCycleSleep(cycleId: number) { return this.request(`/v2/cycle/${cycleId}/sleep`); }
 }
