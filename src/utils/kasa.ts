@@ -43,27 +43,59 @@ export class KasaClient {
 
   private async login(): Promise<void> {
     if (!this.username || !this.password) throw new Error('Missing KASA_USERNAME/KASA_PASSWORD');
-    // load or create terminal UUID
     const saved = await loadKasaToken(this.config);
     const uuid = saved?.terminalUUID || randomUUID();
-    const body = {
-      method: 'login',
-      params: {
-        appType: 'Kasa_Android',
-        cloudUserName: this.username,
-        cloudPassword: this.password,
-        terminalUUID: uuid,
+
+    const makeBodies = () => [
+      {
+        method: 'login',
+        params: {
+          appType: 'Kasa_Android',
+          cloudUserName: this.username,
+          cloudPassword: this.password,
+          terminalUUID: uuid,
+        },
       },
-    };
-    const res = await fetch(CLOUD_URL, { method: 'POST', headers: kasaHeaders(), body: JSON.stringify(body) } as any);
-    if (!res.ok) throw new Error(`Kasa login HTTP ${res.status}`);
-    const json = await res.json();
-    if (json.error_code && json.error_code !== 0) throw new Error(`Kasa login error: ${json.msg || json.error_code}`);
-    const token = json.result?.token as string | undefined;
-    if (!token) throw new Error('Kasa login failed: no token');
-    this.token = token;
-    this.terminalUUID = uuid;
-    await saveKasaToken(this.config, { token, terminalUUID: uuid });
+      {
+        method: 'login',
+        params: {
+          appType: 'Kasa_Android',
+          appVersion: '3.0.0',
+          locale: 'en_US',
+          clientType: 'android',
+          cloudUserName: this.username,
+          cloudPassword: this.password,
+          terminalUUID: uuid,
+        },
+      },
+      {
+        method: 'login',
+        params: {
+          appType: 'Kasa_iOS',
+          appVersion: '3.0.0',
+          locale: 'en_US',
+          clientType: 'ios',
+          cloudUserName: this.username,
+          cloudPassword: this.password,
+          terminalUUID: uuid,
+        },
+      },
+    ];
+
+    let lastErr: any = null;
+    for (const body of makeBodies()) {
+      const res = await fetch(CLOUD_URL, { method: 'POST', headers: kasaHeaders(), body: JSON.stringify(body) } as any);
+      if (!res.ok) { lastErr = new Error(`Kasa login HTTP ${res.status}`); continue; }
+      const json = await res.json();
+      if (json.error_code && json.error_code !== 0) { lastErr = new Error(`Kasa login error: ${json.msg || json.error_code}`); continue; }
+      const token = json.result?.token as string | undefined;
+      if (!token) { lastErr = new Error('Kasa login failed: no token'); continue; }
+      this.token = token;
+      this.terminalUUID = uuid;
+      await saveKasaToken(this.config, { token, terminalUUID: uuid });
+      return;
+    }
+    throw lastErr || new Error('Kasa login failed');
   }
 
   private async ensureToken() {
