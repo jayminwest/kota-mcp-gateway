@@ -17,6 +17,10 @@ Requirements
 - Add to `.env`:
   - `WHOOP_API_KEY=<your_bearer_token>`
 
+API Base URL (v2)
+- The gateway targets WHOOP v2 endpoints under `https://api.prod.whoop.com/developer/v2/...`.
+- If you see 404s after authenticating, ensure you’re on the latest gateway image with the `/developer` base path.
+
 Notes on tokens
 - WHOOP’s public API uses OAuth2. For now, the gateway expects a bearer token in `WHOOP_API_KEY`.
 - If your token is short-lived, you’ll need to update it when it expires. Future versions may add OAuth in the gateway to refresh automatically.
@@ -40,4 +44,3 @@ Troubleshooting
 - `Whoop error: Missing WHOOP_API_KEY`: Set the token in `.env` and restart.
 - 401/403 errors: Token expired or lacks required scopes.
 - 429 rate-limits: Reduce page size or frequency.
-

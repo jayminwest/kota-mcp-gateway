@@ -3,7 +3,8 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { AppConfig } from './config.js';
 
-const BASE_URL = 'https://api.prod.whoop.com';
+// WHOOP v2 base per OpenAPI servers: https://api.prod.whoop.com/developer
+const BASE_URL = 'https://api.prod.whoop.com/developer';
 const AUTH_URL = 'https://api.prod.whoop.com/oauth/oauth2/auth';
 const TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token';
 
@@ -185,11 +186,11 @@ export class WhoopClient {
   }
 
   // Specific endpoints
-  getProfileBasic() { return this.request('/v2/user/profile/basic'); }
-  getBodyMeasurement() { return this.request('/v2/user/measurement/body'); }
-  getRecoveries(p: any) { return this.paginate('/v2/recovery', p); }
-  getSleeps(p: any) { return this.paginate('/v2/activity/sleep', p); }
-  getWorkouts(p: any) { return this.paginate('/v2/activity/workout', p); }
-  getCycles(p: any) { return this.paginate('/v2/cycle', p); }
-  revokeAccess() { return this.request('/v2/user/access', undefined, { method: 'DELETE' } as any); }
+  getProfileBasic() { return this.request('/developer/v1/user/profile/basic'); }
+  getBodyMeasurement() { return this.request('/developer/v1/user/measurement/body'); }
+  getRecoveries(p: any) { return this.paginate('/developer/v1/recovery', p); }
+  getSleeps(p: any) { return this.paginate('/developer/v1/activity/sleep', p); }
+  getWorkouts(p: any) { return this.paginate('/developer/v1/activity/workout', p); }
+  getCycles(p: any) { return this.paginate('/developer/v1/cycle', p); }
+  revokeAccess() { return this.request('/developer/v1/user/access', undefined, { method: 'DELETE' } as any); }
 }
