@@ -46,6 +46,10 @@ const ConfigSchema = z.object({
   // GitHub
   GITHUB_TOKEN: z.string().optional(),
   GITHUB_USERNAME: z.string().optional(),
+
+  // Stripe
+  STRIPE_API_KEY: z.string().optional(),
+  STRIPE_ACCOUNT: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

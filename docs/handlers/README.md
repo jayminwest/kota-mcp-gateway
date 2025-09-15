@@ -5,6 +5,7 @@ This directory documents handler-specific setup and usage. Start here if you’r
 Handlers Index
 - Google (Gmail + Calendar): GOOGLE.md
 - GitHub: GITHUB.md
+- Stripe: STRIPE.md
 - WHOOP (v2 API): WHOOP.md
 - Kraken (Crypto): KRAKEN.md
 - Rize (GraphQL API): RIZE.md

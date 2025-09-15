@@ -16,6 +16,7 @@ import { KrakenHandler } from './handlers/kraken.js';
 import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
 import { GitHubHandler } from './handlers/github.js';
+import { StripeHandler } from './handlers/stripe.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -178,6 +179,21 @@ async function main() {
     } catch (err) { next(err); }
   });
 
+  // Stripe status: token presence + account details
+  app.get('/auth/stripe/status', async (req, res, next) => {
+    try {
+      const { STRIPE_API_KEY, STRIPE_ACCOUNT } = config;
+      if (!STRIPE_API_KEY) return res.json({ authenticated: false });
+      try {
+        const { getAccountStatus } = await import('./utils/stripe.js');
+        const acct = await getAccountStatus(STRIPE_API_KEY, STRIPE_ACCOUNT);
+        res.json({ authenticated: true, account: { id: acct.id, email: acct.email, default_currency: acct.default_currency } });
+      } catch (e: any) {
+        return res.json({ authenticated: false, error: e?.message || String(e) });
+      }
+    } catch (err) { next(err); }
+  });
+
   // MCP server
   const mcp = new McpServer({
     name: 'kota-gateway',
@@ -209,6 +225,7 @@ async function main() {
     make(RizeHandler),
     make(SlackHandler),
     make(GitHubHandler),
+    make(StripeHandler),
   ];
 
   for (const handler of handlers) {
@@ -351,6 +368,25 @@ async function main() {
     ].join('\n')
   );
 
+  registerHelpResource(
+    'stripe_help_usage',
+    'help://stripe/usage',
+    [
+      'Stripe Help',
+      '',
+      'Auth/status:',
+      '- Set STRIPE_API_KEY in .env (sk_live_ or sk_test_).',
+      '- Optional STRIPE_ACCOUNT for Connect (acct_...).',
+      '- GET /auth/stripe/status → { authenticated, account }',
+      '',
+      'Tools:',
+      '- stripe_activity_summary { start?, end?, currency?, detail?: "numbers"|"full", max_pages?, max_items? }',
+      '',
+      'Notes:',
+      '- Aggregates charges, refunds, payouts, disputes, customers, subscriptions.',
+    ].join('\n')
+  );
+
   // Prompts (examples and quick usage tips)
   mcp.prompt('rize.examples', 'Examples for Rize usage', async () => ({
     description: 'Ready-to-use Rize examples',
@@ -404,6 +440,14 @@ async function main() {
     messages: [
       { role: 'assistant', content: { type: 'text', text: 'github_activity_summary { "detail": "numbers" }' } },
       { role: 'assistant', content: { type: 'text', text: 'github_activity_summary { "start": "2025-09-01", "end": "2025-09-15", "detail": "titles", "max_items": 10 }' } },
+    ],
+  }));
+
+  mcp.prompt('stripe.examples', 'Examples for Stripe activity', async () => ({
+    description: 'Stripe activity summary examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'stripe_activity_summary { "detail": "numbers" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'stripe_activity_summary { "start": "2025-09-01", "end": "2025-09-15", "detail": "full" }' } },
     ],
   }));
 
