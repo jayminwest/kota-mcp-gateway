@@ -2,8 +2,11 @@ KOTA MCP Gateway Handlers
 
 This directory documents handler-specific setup and usage. Start here if you’re bringing a new machine online or enabling a new service.
 
-Currently Implemented
-- Google (Gmail + Calendar) — OAuth flow with token storage; tools for listing/sending Gmail and listing/creating/updating Calendar events.
+Handlers Index
+- Google (Gmail + Calendar): GOOGLE.md
+- WHOOP (v2 API): WHOOP.md
+- Kraken (Crypto): KRAKEN.md
+- Rize (GraphQL API): RIZE.md
 
 Common Concepts
 - Config: Populate required env vars in `.env` (see `.env.example`).
@@ -12,6 +15,5 @@ Common Concepts
 - MCP endpoint: Streamable HTTP at `http://localhost:3000/mcp`.
 - MCP client config: See `.mcp.json` at the repo root.
 
-Guides
-- GOOGLE.md — Complete setup for Gmail and Google Calendar (OAuth, scopes, testing tools).
-
+Notes
+- Additional handlers (Plaid, Kasa, Slack) are scaffolded or planned and will be documented here as they’re implemented.
