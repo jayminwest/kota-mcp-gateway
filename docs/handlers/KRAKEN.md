@@ -15,6 +15,11 @@ Notes
 - `KRAKEN_API_SECRET` must be the base64-encoded string exactly as provided by Kraken; do not modify.
 - `kraken_get_ticker` works without credentials; `get_balance` requires both key/secret.
 
+Status
+- Verify configuration and credentials quickly in a browser:
+  - `GET http://localhost:3000/auth/kraken/status`
+  - Returns `{ hasKey, hasSecret, authorized, error? }`
+
 Examples
 - Ticker: `{ "pair": "XBTUSD" }`
 - Balance: `{}`
