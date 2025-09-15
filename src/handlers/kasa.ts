@@ -22,6 +22,36 @@ export class KasaHandler extends BaseHandler {
           action: z.enum(['on', 'off']).describe('Action to perform'),
         },
       },
+      {
+        action: 'set_brightness',
+        description: 'Set bulb brightness (1-100)',
+        inputSchema: {
+          device_id: z.string(),
+          brightness: z.number().int().min(1).max(100),
+          transition_ms: z.number().int().min(0).max(10000).default(0).optional(),
+        },
+      },
+      {
+        action: 'set_color',
+        description: 'Set bulb color via hue (0-360) and saturation (0-100). Optional brightness (1-100).',
+        inputSchema: {
+          device_id: z.string(),
+          hue: z.number().int().min(0).max(360),
+          saturation: z.number().int().min(0).max(100),
+          brightness: z.number().int().min(1).max(100).optional(),
+          transition_ms: z.number().int().min(0).max(10000).default(0).optional(),
+        },
+      },
+      {
+        action: 'set_color_temp',
+        description: 'Set bulb white color temperature (e.g., 2700-6500 K). Optional brightness (1-100).',
+        inputSchema: {
+          device_id: z.string(),
+          color_temp: z.number().int().min(1500).max(9000),
+          brightness: z.number().int().min(1).max(100).optional(),
+          transition_ms: z.number().int().min(0).max(10000).default(0).optional(),
+        },
+      },
     ];
   }
 
@@ -39,6 +69,30 @@ export class KasaHandler extends BaseHandler {
           const id = String(args?.device_id);
           const on = String(args?.action).toLowerCase() === 'on';
           const resp = await client.setPowerState(id, on);
+          return { content: [{ type: 'text', text: JSON.stringify(resp, null, 2) }] };
+        }
+        case 'set_brightness': {
+          const id = String(args?.device_id);
+          const brightness = Number(args?.brightness);
+          const transition_period = Number(args?.transition_ms ?? 0);
+          const resp = await client.setBulbState(id, { on_off: 1, brightness, transition_period });
+          return { content: [{ type: 'text', text: JSON.stringify(resp, null, 2) }] };
+        }
+        case 'set_color': {
+          const id = String(args?.device_id);
+          const hue = Number(args?.hue);
+          const saturation = Number(args?.saturation);
+          const brightness = args?.brightness !== undefined ? Number(args?.brightness) : undefined;
+          const transition_period = Number(args?.transition_ms ?? 0);
+          const resp = await client.setBulbState(id, { on_off: 1, hue, saturation, ...(brightness ? { brightness } : {}), transition_period });
+          return { content: [{ type: 'text', text: JSON.stringify(resp, null, 2) }] };
+        }
+        case 'set_color_temp': {
+          const id = String(args?.device_id);
+          const color_temp = Number(args?.color_temp);
+          const brightness = args?.brightness !== undefined ? Number(args?.brightness) : undefined;
+          const transition_period = Number(args?.transition_ms ?? 0);
+          const resp = await client.setBulbState(id, { on_off: 1, color_temp, ...(brightness ? { brightness } : {}), transition_period });
           return { content: [{ type: 'text', text: JSON.stringify(resp, null, 2) }] };
         }
         default:

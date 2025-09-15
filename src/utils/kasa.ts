@@ -86,6 +86,13 @@ export class KasaClient {
     return json;
   }
 
+  private async findDevice(deviceIdOrAlias: string) {
+    const devices = await this.getDeviceList();
+    const dev = devices.find((d: any) => d.deviceId === deviceIdOrAlias || d.alias === deviceIdOrAlias);
+    if (!dev) throw new Error(`Device not found: ${deviceIdOrAlias}`);
+    return dev;
+  }
+
   async getDeviceList(): Promise<any[]> {
     await this.ensureToken();
     const url = `?token=${this.token}`;
@@ -102,9 +109,7 @@ export class KasaClient {
 
   async setPowerState(deviceId: string, state: boolean): Promise<any> {
     await this.ensureToken();
-    const devices = await this.getDeviceList();
-    const dev = devices.find((d: any) => d.deviceId === deviceId || d.alias === deviceId);
-    if (!dev) throw new Error(`Device not found: ${deviceId}`);
+    const dev = await this.findDevice(deviceId);
     const appServerUrl = dev.appServerUrl as string;
     const reqData = JSON.stringify({ system: { set_relay_state: { state: state ? 1 : 0 } } });
     const body = { method: 'passthrough', params: { deviceId: dev.deviceId, requestData: reqData } };
@@ -113,5 +118,25 @@ export class KasaClient {
     const inner = data?.result?.responseData ? JSON.parse(data.result.responseData) : {};
     return inner;
   }
-}
 
+  async setBulbState(deviceId: string, state: { on_off?: number; brightness?: number; hue?: number; saturation?: number; color_temp?: number; transition_period?: number }) {
+    await this.ensureToken();
+    const dev = await this.findDevice(deviceId);
+    const appServerUrl = dev.appServerUrl as string;
+    const url = `${appServerUrl}?token=${this.token}`;
+    const service = 'smartlife.iot.smartbulb.lightingservice';
+    const payload = { [service]: { transition_light_state: { ...state } } } as any;
+    const body = { method: 'passthrough', params: { deviceId: dev.deviceId, requestData: JSON.stringify(payload) } };
+    let data = await this.cloudRequest(url, body);
+    let inner = data?.result?.responseData ? JSON.parse(data.result.responseData) : {};
+    // If device expects set_light_state instead
+    const err = inner?.[service]?.transition_light_state?.err_code;
+    if (typeof err !== 'undefined' && err !== 0) {
+      const payload2 = { [service]: { set_light_state: { ...state } } } as any;
+      const body2 = { method: 'passthrough', params: { deviceId: dev.deviceId, requestData: JSON.stringify(payload2) } };
+      data = await this.cloudRequest(url, body2);
+      inner = data?.result?.responseData ? JSON.parse(data.result.responseData) : {};
+    }
+    return inner;
+  }
+}

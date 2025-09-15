@@ -145,6 +145,26 @@ async function main() {
     } catch (err) { next(err); }
   });
 
+  // Kasa status: report creds and device count
+  app.get('/auth/kasa/status', async (req, res, next) => {
+    try {
+      const hasUser = Boolean(config.KASA_USERNAME);
+      const hasPass = Boolean(config.KASA_PASSWORD);
+      let devices: any[] | undefined;
+      let error: string | undefined;
+      if (hasUser && hasPass) {
+        try {
+          const { KasaClient } = await import('./utils/kasa.js');
+          const kasa = new KasaClient(config);
+          devices = await kasa.getDeviceList();
+        } catch (e: any) {
+          error = e?.message || String(e);
+        }
+      }
+      res.json({ hasUser, hasPass, deviceCount: devices?.length, devices: devices?.map(d => ({ id: d.deviceId, alias: d.alias, model: d.deviceModel }))?.slice(0, 20), ...(error ? { error } : {}) });
+    } catch (err) { next(err); }
+  });
+
   // MCP server
   const mcp = new McpServer({
     name: 'kota-gateway',
