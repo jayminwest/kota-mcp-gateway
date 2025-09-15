@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
+import { KasaClient } from '../utils/kasa.js';
 
 export class KasaHandler extends BaseHandler {
   readonly prefix = 'kasa';
@@ -25,13 +26,27 @@ export class KasaHandler extends BaseHandler {
   }
 
   async execute(action: string, args: any): Promise<CallToolResult> {
-    const msg = `kasa_${action} not implemented yet`;
-    (this as any).logger?.info({ action, args }, msg);
-    return {
-      content: [
-        { type: 'text', text: `${msg}. Echo args: ${JSON.stringify(args)}` },
-      ],
-      isError: false,
-    };
+    try {
+      const client = new KasaClient(this.config);
+      switch (action) {
+        case 'list_devices': {
+          const list = await client.getDeviceList();
+          // Return concise info
+          const simple = list.map((d: any) => ({ id: d.deviceId, alias: d.alias, model: d.deviceModel, status: d.status }))
+          return { content: [{ type: 'text', text: JSON.stringify({ devices: simple }, null, 2) }] };
+        }
+        case 'control_device': {
+          const id = String(args?.device_id);
+          const on = String(args?.action).toLowerCase() === 'on';
+          const resp = await client.setPowerState(id, on);
+          return { content: [{ type: 'text', text: JSON.stringify(resp, null, 2) }] };
+        }
+        default:
+          return { content: [{ type: 'text', text: `Unknown action: ${action}` }], isError: true };
+      }
+    } catch (err: any) {
+      this.logger.error({ err, action }, 'Kasa error');
+      return { content: [{ type: 'text', text: `Kasa error: ${err?.message || String(err)}` }], isError: true };
+    }
   }
 }
