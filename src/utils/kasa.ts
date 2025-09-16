@@ -181,7 +181,7 @@ export class KasaLanClient {
   constructor(private config: AppConfig) {
     const lib = this.require('tplink-smarthome-api');
     this.client = new lib.Client();
-    this.discoveryMs = Number(config.KASA_LAN_DISCOVERY_MS || 3000);
+    this.discoveryMs = config.KASA_LAN_DISCOVERY_MS ?? 3000;
   }
 
   private async discover(): Promise<any[]> {
@@ -223,7 +223,7 @@ export class KasaLanClient {
 }
 
 export function getKasaClient(config: AppConfig) {
-  const lanOnly = String(config.KASA_LAN_ONLY || '').toLowerCase() === 'true';
+  const lanOnly = config.KASA_LAN_ONLY === true;
   if (lanOnly) return new KasaLanClient(config);
   // Prefer LAN first; fallback to cloud
   return new (class {

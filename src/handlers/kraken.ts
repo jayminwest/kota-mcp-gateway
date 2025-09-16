@@ -4,6 +4,10 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { KrakenClient } from '../utils/kraken.js';
 
+const GetTickerSchema = z.object({
+  pair: z.string().describe('Trading pair, e.g., BTCUSD').optional(),
+}).strip();
+
 export class KrakenHandler extends BaseHandler {
   readonly prefix = 'kraken';
 
@@ -13,7 +17,7 @@ export class KrakenHandler extends BaseHandler {
         action: 'get_ticker',
         description: 'Get ticker price for a symbol pair (e.g., BTCUSD)',
         inputSchema: {
-          pair: z.string().describe('Trading pair, e.g., BTCUSD'),
+          pair: GetTickerSchema.shape.pair,
         },
       },
       {
@@ -29,8 +33,8 @@ export class KrakenHandler extends BaseHandler {
       const client = new KrakenClient(this.config);
       switch (action) {
         case 'get_ticker': {
-          const pair = String(args?.pair || 'XBTUSD');
-          const data = await client.getTicker(pair);
+          const { pair } = this.parseArgs(GetTickerSchema, args);
+          const data = await client.getTicker(pair || 'XBTUSD');
           return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
         }
         case 'get_balance': {

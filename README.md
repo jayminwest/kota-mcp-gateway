@@ -1,6 +1,6 @@
 KOTA MCP Gateway
 
-Unified Model Context Protocol (MCP) gateway that consolidates KOTA tools behind a single HTTP server running at http://localhost:3000.
+Unified Model Context Protocol (MCP) gateway that consolidates KOTA tools behind a single HTTP server running at http://localhost:8081 (default).
 
 Features
 - Single connection point for MCP clients
@@ -38,7 +38,7 @@ MCP Client Config
       "args": [
         "-y",
         "@modelcontextprotocol/server-http-client",
-        "http://localhost:3000"
+        "http://localhost:8081"
       ]
     }
   }
@@ -60,8 +60,8 @@ Rebuild and Restart (quick commands)
 - View logs:
   - `docker-compose logs -f`
 - Health checks:
-  - `curl http://localhost:3000/health`
-  - `curl http://localhost:3000/auth/google/status`
+  - `curl http://localhost:8081/health`
+  - `curl http://localhost:8081/auth/google/status`
 
 Adding New Handlers
 1. Create a class extending `BaseHandler` in `src/handlers/`.

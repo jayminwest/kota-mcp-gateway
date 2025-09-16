@@ -43,7 +43,7 @@ export async function saveWhoopTokens(config: AppConfig, tokens: WhoopTokens) {
 }
 
 export function getWhoopRedirectUri(config: AppConfig) {
-  return config.WHOOP_REDIRECT_URI || 'http://localhost:3000/auth/whoop/callback';
+  return config.WHOOP_REDIRECT_URI || `http://localhost:${config.PORT}/auth/whoop/callback`;
 }
 
 export function getWhoopAuthUrl(config: AppConfig, state?: string) {
@@ -53,6 +53,10 @@ export function getWhoopAuthUrl(config: AppConfig, state?: string) {
     response_type: 'code',
     client_id: cid,
     redirect_uri: getWhoopRedirectUri(config),
+    // Request a refresh token (offline access) and force consent to ensure refresh_token is issued
+    // Note: Some OAuth providers ignore unknown params; WHOOP honors standard OAuth conventions.
+    access_type: 'offline',
+    prompt: 'consent',
     scope: [
       'read:profile',
       'read:body_measurement',

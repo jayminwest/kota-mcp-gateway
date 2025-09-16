@@ -4,6 +4,28 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { getCalendar } from '../utils/google.js';
 
+const ListEventsSchema = z.object({
+  start: z.string().describe('ISO start time').optional(),
+  end: z.string().describe('ISO end time').optional(),
+  max_results: z.coerce.number().int().positive().max(100).optional(),
+}).strip();
+
+const CreateEventSchema = z.object({
+  title: z.string(),
+  start: z.string().describe('ISO start time'),
+  end: z.string().describe('ISO end time'),
+  description: z.string().optional(),
+  attendees: z.array(z.string()).optional(),
+}).strip();
+
+const UpdateEventSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  start: z.string().optional(),
+  end: z.string().optional(),
+  description: z.string().optional(),
+}).strip();
+
 export class CalendarHandler extends BaseHandler {
   readonly prefix = 'calendar';
 
@@ -13,31 +35,31 @@ export class CalendarHandler extends BaseHandler {
         action: 'list_events',
         description: 'List calendar events in a time range',
         inputSchema: {
-          start: z.string().describe('ISO start time').optional(),
-          end: z.string().describe('ISO end time').optional(),
-          max_results: z.number().int().positive().max(100).default(10).optional(),
+          start: ListEventsSchema.shape.start,
+          end: ListEventsSchema.shape.end,
+          max_results: ListEventsSchema.shape.max_results,
         },
       },
       {
         action: 'create_event',
         description: 'Create a calendar event',
         inputSchema: {
-          title: z.string(),
-          start: z.string().describe('ISO start time'),
-          end: z.string().describe('ISO end time'),
-          description: z.string().optional(),
-          attendees: z.array(z.string()).optional(),
+          title: CreateEventSchema.shape.title,
+          start: CreateEventSchema.shape.start,
+          end: CreateEventSchema.shape.end,
+          description: CreateEventSchema.shape.description,
+          attendees: CreateEventSchema.shape.attendees,
         },
       },
       {
         action: 'update_event',
         description: 'Update a calendar event by ID',
         inputSchema: {
-          id: z.string(),
-          title: z.string().optional(),
-          start: z.string().optional(),
-          end: z.string().optional(),
-          description: z.string().optional(),
+          id: UpdateEventSchema.shape.id,
+          title: UpdateEventSchema.shape.title,
+          start: UpdateEventSchema.shape.start,
+          end: UpdateEventSchema.shape.end,
+          description: UpdateEventSchema.shape.description,
         },
       },
     ];
@@ -62,13 +84,14 @@ export class CalendarHandler extends BaseHandler {
   }
 
   private authMessage(): string {
-    return `Gmail/Calendar not authenticated. Open http://localhost:3000/auth/google/start to authorize.`;
+    return `Gmail/Calendar not authenticated. Open http://localhost:${this.config.PORT}/auth/google/start to authorize.`;
   }
 
-  private async listEvents(calendar: any, args: { start?: string; end?: string; max_results?: number }): Promise<CallToolResult> {
-    const start = args?.start ? new Date(args.start) : new Date();
-    const end = args?.end ? new Date(args.end) : new Date(Date.now() + 7*24*3600*1000);
-    const maxResults = args?.max_results || 10;
+  private async listEvents(calendar: any, args: unknown): Promise<CallToolResult> {
+    const parsed = this.parseArgs(ListEventsSchema, args);
+    const start = parsed.start ? new Date(parsed.start) : new Date();
+    const end = parsed.end ? new Date(parsed.end) : new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const maxResults = parsed.max_results ?? 10;
     const res = await calendar.events.list({
       calendarId: 'primary', timeMin: start.toISOString(), timeMax: end.toISOString(), maxResults, singleEvents: true, orderBy: 'startTime'
     });
@@ -78,8 +101,8 @@ export class CalendarHandler extends BaseHandler {
     return { content: [{ type: 'text', text: out.join('\n') }] };
   }
 
-  private async createEvent(calendar: any, args: { title: string; start: string; end: string; description?: string; attendees?: string[] }): Promise<CallToolResult> {
-    const { title, start, end, description, attendees } = args;
+  private async createEvent(calendar: any, args: unknown): Promise<CallToolResult> {
+    const { title, start, end, description, attendees } = this.parseArgs(CreateEventSchema, args);
     if (!title || !start || !end) return { content: [{ type: 'text', text: 'Missing title/start/end' }], isError: true };
     const res = await calendar.events.insert({ calendarId: 'primary', requestBody: {
       summary: title,
@@ -91,8 +114,8 @@ export class CalendarHandler extends BaseHandler {
     return { content: [{ type: 'text', text: `Created event id=${res.data.id}` }] };
   }
 
-  private async updateEvent(calendar: any, args: { id: string; title?: string; start?: string; end?: string; description?: string }): Promise<CallToolResult> {
-    const { id, title, start, end, description } = args;
+  private async updateEvent(calendar: any, args: unknown): Promise<CallToolResult> {
+    const { id, title, start, end, description } = this.parseArgs(UpdateEventSchema, args);
     if (!id) return { content: [{ type: 'text', text: 'Missing id' }], isError: true };
     const patch: any = {};
     if (title) patch.summary = title;

@@ -13,6 +13,6 @@
     "types": ["node"],
     "sourceMap": true
   },
-  "include": ["src/**/*", "scripts/health-check.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

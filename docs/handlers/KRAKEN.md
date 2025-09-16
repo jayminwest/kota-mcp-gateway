@@ -17,7 +17,7 @@ Notes
 
 Status
 - Verify configuration and credentials quickly in a browser:
-  - `GET http://localhost:3000/auth/kraken/status`
+  - `GET http://localhost:8081/auth/kraken/status`
   - Returns `{ hasKey, hasSecret, authorized, error? }`
 
 Examples

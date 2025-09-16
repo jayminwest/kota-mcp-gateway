@@ -36,7 +36,7 @@ export async function saveTokens(config: AppConfig, tokens: any) {
 }
 
 export function getRedirectUri(config: AppConfig) {
-  return config.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback';
+  return config.GOOGLE_REDIRECT_URI || `http://localhost:${config.PORT}/auth/google/callback`;
 }
 
 export async function getOAuth2Client(config: AppConfig, logger: Logger) {
@@ -59,8 +59,8 @@ export async function getOAuth2Client(config: AppConfig, logger: Logger) {
   return oauth2Client;
 }
 
-export async function getAuthUrl(config: AppConfig): Promise<string> {
-  const oauth2 = await getOAuth2Client(config, console as any);
+export async function getAuthUrl(config: AppConfig, logger: Logger): Promise<string> {
+  const oauth2 = await getOAuth2Client(config, logger);
   return oauth2.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
@@ -91,4 +91,3 @@ export async function getCalendar(config: AppConfig, logger: Logger) {
   const calendar = google.calendar({ version: 'v3', auth });
   return { calendar };
 }
-

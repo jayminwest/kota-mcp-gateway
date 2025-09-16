@@ -13,17 +13,40 @@ What you get
   - `whoop_revoke_access` — Revokes the current access token
 
 Requirements
-- WHOOP API access token with scopes: read:profile, read:body_measurement, read:recovery, read:sleep, read:workout, read:cycles
-- Add to `.env`:
-  - `WHOOP_API_KEY=<your_bearer_token>`
+- One of:
+  - OAuth2 client creds (recommended):
+    - `WHOOP_CLIENT_ID=<your_client_id>`
+    - `WHOOP_CLIENT_SECRET=<your_client_secret>`
+    - Optional: `WHOOP_REDIRECT_URI` (defaults to `http://localhost:8081/auth/whoop/callback`)
+  - OR a short‑lived WHOOP API access token (fallback):
+    - `WHOOP_API_KEY=<your_bearer_token>`
 
 API Base URL (v2)
 - The gateway targets WHOOP v2 endpoints under `https://api.prod.whoop.com/developer/v2/...`.
 - If you see 404s after authenticating, ensure you’re on the latest gateway image with the `/developer` base path.
 
 Notes on tokens
-- WHOOP’s public API uses OAuth2. For now, the gateway expects a bearer token in `WHOOP_API_KEY`.
-- If your token is short-lived, you’ll need to update it when it expires. Future versions may add OAuth in the gateway to refresh automatically.
+- WHOOP’s public API uses OAuth2. The gateway supports full OAuth including refresh.
+- The OAuth flow now requests offline access and consent to obtain a `refresh_token`. Access tokens typically last ~1 hour and will auto‑refresh when a `refresh_token` is present.
+- If you only set `WHOOP_API_KEY`, that token is usually short‑lived and will expire; prefer the OAuth flow below.
+
+OAuth flow (recommended)
+- Set `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `.env` (and optionally `WHOOP_REDIRECT_URI`).
+- Start auth in a browser: `http://localhost:8081/auth/whoop/start`
+  - You’ll be prompted to consent. The gateway requests the scopes:
+    `read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles`
+- After redirect back to the gateway, tokens are stored at `./data/whoop/tokens.json`.
+- Verify auth: `curl http://localhost:8081/auth/whoop/status`
+  - Response includes `{ authenticated, profile, token_type, expiry_date, scope }`
+  - If a `refresh_token` was issued, the server refreshes automatically when near expiry.
+
+Re‑auth steps
+- If auth seems expired or you didn’t get a `refresh_token`:
+  1) Ensure `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` are set in `.env`.
+  2) Visit `http://localhost:8081/auth/whoop/start` again.
+  3) Accept consent when prompted (the gateway forces `prompt=consent` and `access_type=offline` to obtain a refresh token).
+  4) Check `GET /auth/whoop/status` to confirm.
+  - If needed, remove `./data/whoop/tokens.json` and repeat to force a clean re‑auth.
 
 Start/Restart
 - Docker: `docker-compose up -d --build` (after setting `.env`)

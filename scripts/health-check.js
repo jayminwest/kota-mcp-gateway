@@ -1,6 +1,8 @@
 import http from 'node:http';
 
-const url = process.env.HEALTH_URL || 'http://localhost:3000/health';
+const defaultPort = process.env.PORT || '8081';
+const healthPath = process.env.HEALTH_PATH || '/health';
+const url = process.env.HEALTH_URL || `http://localhost:${defaultPort}${healthPath.startsWith('/') ? healthPath : `/${healthPath}`}`;
 
 const req = http.get(url, (res) => {
   if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
@@ -11,4 +13,3 @@ const req = http.get(url, (res) => {
 });
 
 req.on('error', () => process.exit(1));
-

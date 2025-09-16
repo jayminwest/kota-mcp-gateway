@@ -15,7 +15,7 @@ Common Concepts
 - Config: Populate required env vars in `.env` (see `.env.example`).
 - Data storage: Persistent data lives under `./data` (mounted into Docker). OAuth tokens are stored in a service-specific folder, e.g., `./data/google/tokens.json`.
 - Health: `GET /health` should return `{ status: 'ok' }` when the gateway is running.
-- MCP endpoint: Streamable HTTP at `http://localhost:3000/mcp`.
+- MCP endpoint: Streamable HTTP at `http://localhost:8081/mcp` (default).
 - MCP client config: See `.mcp.json` at the repo root.
 
 Notes

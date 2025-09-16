@@ -4,6 +4,36 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { RizeClient } from '../utils/rize.js';
 
+const ExecuteQuerySchema = z.object({
+  query: z.string().describe('GraphQL query string'),
+  variables: z.record(z.any()).optional(),
+}).strip();
+
+const IntrospectSchema = z.object({
+  partial: z.boolean().default(true).optional(),
+}).strip();
+
+const ListProjectsSchema = z.object({
+  first: z.coerce.number().int().positive().max(50).optional(),
+}).strip();
+
+const ListTasksSchema = z.object({
+  first: z.coerce.number().int().positive().max(50).optional(),
+}).strip();
+
+const ListClientTimeEntriesSchema = z.object({
+  startTime: z.string(),
+  endTime: z.string(),
+  client_name: z.string().optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+}).strip();
+
+const ClientTimeSpentSchema = z.object({
+  startTime: z.string(),
+  endTime: z.string(),
+  client_name: z.string(),
+}).strip();
+
 export class RizeHandler extends BaseHandler {
   readonly prefix = 'rize';
 
@@ -12,17 +42,12 @@ export class RizeHandler extends BaseHandler {
       {
         action: 'execute_query',
         description: 'Execute a GraphQL query against Rize',
-        inputSchema: {
-          query: z.string().describe('GraphQL query string'),
-          variables: z.record(z.any()).optional(),
-        },
+        inputSchema: ExecuteQuerySchema.shape,
       },
       {
         action: 'introspect',
         description: 'Run GraphQL introspection (schema metadata)',
-        inputSchema: {
-          partial: z.boolean().default(true).optional(),
-        },
+        inputSchema: IntrospectSchema.shape,
       },
       // Typed convenience tools (reduce trial-and-error for common needs)
       {
@@ -33,31 +58,22 @@ export class RizeHandler extends BaseHandler {
       {
         action: 'list_projects',
         description: 'List recent projects',
-        inputSchema: { first: z.number().int().positive().max(50).default(10).optional() },
+        inputSchema: ListProjectsSchema.shape,
       },
       {
         action: 'list_tasks',
         description: 'List recent tasks',
-        inputSchema: { first: z.number().int().positive().max(50).default(10).optional() },
+        inputSchema: ListTasksSchema.shape,
       },
       {
         action: 'list_client_time_entries',
         description: 'List client time entries between start/end; optionally filter by client name',
-        inputSchema: {
-          startTime: z.string(),
-          endTime: z.string(),
-          client_name: z.string().optional(),
-          limit: z.number().int().positive().max(500).default(100).optional(),
-        },
+        inputSchema: ListClientTimeEntriesSchema.shape,
       },
       {
         action: 'get_client_time_spent',
         description: 'Compute total and daily hours for a client between start/end',
-        inputSchema: {
-          startTime: z.string(),
-          endTime: z.string(),
-          client_name: z.string(),
-        },
+        inputSchema: ClientTimeSpentSchema.shape,
       },
     ];
   }
@@ -67,11 +83,13 @@ export class RizeHandler extends BaseHandler {
       const client = new RizeClient(this.config);
       switch (action) {
         case 'execute_query': {
-          const data = await client.query(String(args?.query), args?.variables || {});
+          const parsed = this.parseArgs(ExecuteQuerySchema, args);
+          const data = await client.query(parsed.query, parsed.variables || {});
           return this.json(data);
         }
         case 'introspect': {
-          const data = await client.introspect(Boolean(args?.partial ?? true));
+          const { partial } = this.parseArgs(IntrospectSchema, args);
+          const data = await client.introspect(partial ?? true);
           return this.json(data);
         }
         case 'get_current_user': {
@@ -80,33 +98,32 @@ export class RizeHandler extends BaseHandler {
           return this.json(data);
         }
         case 'list_projects': {
-          const first = Number(args?.first ?? 10);
+          const { first } = this.parseArgs(ListProjectsSchema, args);
+          const limit = first ?? 10;
           const q = `query($first: Int!) { projects(first: $first) { edges { node { name color createdAt updatedAt } } } }`;
-          const data = await client.query(q, { first });
+          const data = await client.query(q, { first: limit });
           return this.json(data);
         }
         case 'list_tasks': {
-          const first = Number(args?.first ?? 10);
+          const { first } = this.parseArgs(ListTasksSchema, args);
+          const limit = first ?? 10;
           const q = `query($first: Int!) { tasks(first: $first) { edges { node { name createdAt updatedAt } } } }`;
-          const data = await client.query(q, { first });
+          const data = await client.query(q, { first: limit });
           return this.json(data);
         }
         case 'list_client_time_entries': {
-          const startTime = String(args?.startTime);
-          const endTime = String(args?.endTime);
-          const clientName = args?.client_name ? String(args?.client_name) : undefined;
+          const parsed = this.parseArgs(ListClientTimeEntriesSchema, args);
+          const { startTime, endTime, client_name: clientName, limit } = parsed;
           const q = `query($start:String!,$end:String!){ clientTimeEntries(startTime:$start,endTime:$end){ client { name } startTime endTime duration } }`;
           const resp = await client.query(q, { start: startTime, end: endTime });
           let entries = resp?.data?.clientTimeEntries || [];
           if (clientName) entries = entries.filter((e: any) => e?.client?.name === clientName);
-          const limit = Number(args?.limit ?? 100);
-          entries = entries.slice(0, limit);
+          const cap = limit ?? 100;
+          entries = entries.slice(0, cap);
           return this.json({ data: { clientTimeEntries: entries } });
         }
         case 'get_client_time_spent': {
-          const startTime = String(args?.startTime);
-          const endTime = String(args?.endTime);
-          const clientName = String(args?.client_name);
+          const { startTime, endTime, client_name: clientName } = this.parseArgs(ClientTimeSpentSchema, args);
           const q = `query($start:String!,$end:String!){ clientTimeEntries(startTime:$start,endTime:$end){ client { name } startTime endTime duration } }`;
           const resp = await client.query(q, { start: startTime, end: endTime });
           const all = (resp?.data?.clientTimeEntries || []).filter((e: any) => e?.client?.name === clientName);

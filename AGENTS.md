@@ -29,7 +29,7 @@
 ## Testing Guidelines
 - No unit test framework configured yet.
 - Validate with `npm run typecheck` and `npm run lint`.
-- Smoke tests: `curl http://localhost:3000/health` and `/auth/*/status` routes.
+- Smoke tests: `curl http://localhost:8081/health` and `/auth/*/status` routes.
 - For new features, document in `docs/handlers/` and include example curl/MCP calls in PRs. If adding tests, Jest/Vitest are acceptable.
 
 ## Commit & Pull Request Guidelines
@@ -41,4 +41,3 @@
 - Protect endpoints when needed via `MCP_AUTH_TOKEN` (Bearer token).
 - OAuth/API keys live in `.env`; tokens persist under `./data/<service>`.
 - Default port and health path are configurable (`PORT`, `HEALTH_PATH`).
-

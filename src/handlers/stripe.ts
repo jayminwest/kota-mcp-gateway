@@ -6,6 +6,15 @@ import { assertStripeKey, cents, getAccountStatus, getChargesSummary, getCustome
 
 const DetailEnum = z.enum(['numbers', 'full']);
 
+const ActivitySummarySchema = z.object({
+  start: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to 7 days ago.'),
+  end: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to now.'),
+  currency: z.string().optional().describe('Filter to a currency (e.g., usd). Default: all.'),
+  detail: DetailEnum.optional().describe('Level of detail: numbers | full'),
+  max_pages: z.coerce.number().int().positive().max(100).optional(),
+  max_items: z.coerce.number().int().positive().max(2000).optional(),
+}).strip();
+
 export class StripeHandler extends BaseHandler {
   readonly prefix = 'stripe';
 
@@ -14,14 +23,7 @@ export class StripeHandler extends BaseHandler {
       {
         action: 'activity_summary',
         description: 'Summarize Stripe activity across the account within a timeframe. Returns totals for charges, refunds, payouts, disputes, customers, and subscriptions.',
-        inputSchema: {
-          start: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to 7 days ago.'),
-          end: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to now.'),
-          currency: z.string().optional().describe('Filter to a currency (e.g., usd). Default: all.'),
-          detail: DetailEnum.optional().describe('Level of detail: numbers | full'),
-          max_pages: z.number().int().positive().max(100).default(10).optional(),
-          max_items: z.number().int().positive().max(2000).default(1000).optional(),
-        },
+        inputSchema: ActivitySummarySchema.shape,
       },
     ];
   }
@@ -35,20 +37,13 @@ export class StripeHandler extends BaseHandler {
     }
   }
 
-  private async activitySummary(args: any): Promise<CallToolResult> {
-    const parsed = z.object({
-      start: z.string().optional(),
-      end: z.string().optional(),
-      currency: z.string().optional(),
-      detail: DetailEnum.default('numbers').optional(),
-      max_pages: z.number().int().positive().max(100).default(10).optional(),
-      max_items: z.number().int().positive().max(2000).default(1000).optional(),
-    }).parse(args || {});
+  private async activitySummary(args: unknown): Promise<CallToolResult> {
+    const parsed = this.parseArgs(ActivitySummarySchema, args);
 
     const key = assertStripeKey(this.config);
     const account = this.config.STRIPE_ACCOUNT;
     const range = toUnixRange(parsed.start, parsed.end, 7);
-    const cap = { maxPages: parsed.max_pages || 10, maxItems: parsed.max_items || 1000 };
+    const cap = { maxPages: parsed.max_pages ?? 10, maxItems: parsed.max_items ?? 1000 };
 
     // Parallelize calls for responsiveness
     const [acct, charges, refunds, payouts, disputes, customers, subs] = await Promise.all([
@@ -87,7 +82,7 @@ export class StripeHandler extends BaseHandler {
       for (const [name, count] of byProduct) lines.push(`- ${name}: ${count} subscriptions`);
     }
 
-    if (parsed.detail === 'full') {
+    if ((parsed.detail ?? 'numbers') === 'full') {
       const sampleCharges = charges.samples?.map((c: any) => `• ${c.id} — ${c.currency?.toUpperCase()} ${cents(c.amount)} — ${c.billing_details?.email || c.customer || ''}`) || [];
       if (sampleCharges.length) {
         lines.push('');

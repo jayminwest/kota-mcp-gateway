@@ -20,6 +20,15 @@ import { StripeHandler } from './handlers/stripe.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
+import { generateSlackState, getSlackAuthUrl, exchangeSlackCode, getSlackStatus, loadSlackTokens } from './utils/slack.js';
+
+function asyncHandler<
+  T extends (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
+>(fn: T) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 
 async function main() {
   const config = loadConfig();
@@ -36,163 +45,205 @@ async function main() {
   });
 
   // Google OAuth endpoints
-  app.get('/auth/google/start', async (req, res, next) => {
-    try {
-      const url = await getAuthUrl(config);
-      res.redirect(302, url);
-    } catch (err) { next(err); }
-  });
+  app.get('/auth/google/start', asyncHandler(async (_req, res) => {
+    const url = await getAuthUrl(config, logger);
+    res.redirect(302, url);
+  }));
 
-  app.get('/auth/google/callback', async (req, res, next) => {
-    try {
-      const code = (req.query.code as string) || '';
-      if (!code) return res.status(400).send('Missing code');
-      await handleOAuthCallback(config, code, logger);
-      res.send('Google authentication successful. You can close this window.');
-    } catch (err) { next(err); }
-  });
+  app.get('/auth/google/callback', asyncHandler(async (req, res) => {
+    const code = (req.query.code as string) || '';
+    if (!code) {
+      res.status(400).send('Missing code');
+      return;
+    }
+    await handleOAuthCallback(config, code, logger);
+    res.send('Google authentication successful. You can close this window.');
+  }));
 
   // Minimal token/status endpoint
-  app.get('/auth/google/status', async (req, res, next) => {
+  app.get('/auth/google/status', asyncHandler(async (_req, res) => {
+    const tokens = await loadTokens(config);
+    if (!tokens) {
+      res.json({ authenticated: false });
+      return;
+    }
+    let email: string | undefined;
     try {
-      const tokens = await loadTokens(config);
-      if (!tokens) return res.json({ authenticated: false });
-      let email: string | undefined;
-      try {
-        const { gmail } = await getGmail(config, logger);
-        if (gmail) {
-          const profile = await gmail.users.getProfile({ userId: 'me' });
-          email = profile.data.emailAddress || undefined;
-        }
-      } catch {}
-      res.json({
-        authenticated: true,
-        email,
-        expiry_date: tokens.expiry_date,
-        scope: tokens.scope,
-        token_type: tokens.token_type,
-      });
-    } catch (err) { next(err); }
-  });
+      const { gmail } = await getGmail(config, logger);
+      if (gmail) {
+        const profile = await gmail.users.getProfile({ userId: 'me' });
+        email = profile.data.emailAddress || undefined;
+      }
+    } catch {}
+    res.json({
+      authenticated: true,
+      email,
+      expiry_date: tokens.expiry_date,
+      scope: tokens.scope,
+      token_type: tokens.token_type,
+    });
+  }));
 
   // WHOOP OAuth endpoints
-  app.get('/auth/whoop/start', async (req, res, next) => {
+  app.get('/auth/whoop/start', asyncHandler(async (_req, res) => {
+    // Generate a minimal state to satisfy WHOOP requirement
+    const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    const url = getWhoopAuthUrl(config, state);
+    // Set a lightweight cookie for optional validation
+    res.setHeader('Set-Cookie', `whoop_state=${state}; Path=/; HttpOnly; SameSite=Lax`);
+    res.redirect(302, url);
+  }));
+  app.get('/auth/whoop/callback', asyncHandler(async (req, res) => {
+    const code = (req.query.code as string) || '';
+    if (!code) {
+      res.status(400).send('Missing code');
+      return;
+    }
+    // Optional: validate state
     try {
-      // Generate a minimal state to satisfy WHOOP requirement
-      const state = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-      const url = getWhoopAuthUrl(config, state);
-      // Set a lightweight cookie for optional validation
-      res.setHeader('Set-Cookie', `whoop_state=${state}; Path=/; HttpOnly; SameSite=Lax`);
-      res.redirect(302, url);
-    } catch (err) { next(err); }
-  });
-  app.get('/auth/whoop/callback', async (req, res, next) => {
+      const state = (req.query.state as string) || '';
+      const cookie = (req.headers.cookie || '').split(';').map(s=>s.trim()).find(s=>s.startsWith('whoop_state='));
+      const stored = cookie ? cookie.split('=')[1] : '';
+      if (stored && state && stored !== state) {
+        res.status(400).send('Invalid state');
+        return;
+      }
+    } catch {}
+    await exchangeWhoopCode(config, code);
+    res.send('WHOOP authentication successful. You can close this window.');
+  }));
+  app.get('/auth/whoop/status', asyncHandler(async (_req, res) => {
+    const tokens = await loadWhoopTokens(config);
+    if (!tokens && !config.WHOOP_API_KEY) {
+      res.json({ authenticated: false });
+      return;
+    }
+    let profile: any = undefined;
     try {
-      const code = (req.query.code as string) || '';
-      if (!code) return res.status(400).send('Missing code');
-      // Optional: validate state
-      try {
-        const state = (req.query.state as string) || '';
-        const cookie = (req.headers.cookie || '').split(';').map(s=>s.trim()).find(s=>s.startsWith('whoop_state='));
-        const stored = cookie ? cookie.split('=')[1] : '';
-        if (stored && state && stored !== state) {
-          return res.status(400).send('Invalid state');
-        }
-      } catch {}
-      await exchangeWhoopCode(config, code);
-      res.send('WHOOP authentication successful. You can close this window.');
-    } catch (err) { next(err); }
-  });
-  app.get('/auth/whoop/status', async (req, res, next) => {
+      const { WhoopClient } = await import('./utils/whoop.js');
+      const client = new WhoopClient(config);
+      profile = await client.getProfileBasic();
+    } catch {}
+    res.json({ authenticated: true, profile, token_type: tokens?.token_type || (config.WHOOP_API_KEY ? 'Bearer' : undefined), expiry_date: tokens?.expiry_date, scope: tokens?.scope });
+  }));
+
+  // Slack OAuth endpoints
+  app.get('/auth/slack/start', asyncHandler(async (_req, res) => {
+    const state = generateSlackState();
+    const url = getSlackAuthUrl(config, state);
+    res.setHeader('Set-Cookie', `slack_state=${state}; Path=/; HttpOnly; SameSite=Lax`);
+    res.redirect(302, url);
+  }));
+  app.get('/auth/slack/callback', asyncHandler(async (req, res) => {
+    const code = (req.query.code as string) || '';
+    if (!code) {
+      res.status(400).send('Missing code');
+      return;
+    }
     try {
-      const tokens = await loadWhoopTokens(config);
-      if (!tokens && !config.WHOOP_API_KEY) return res.json({ authenticated: false });
-      let profile: any = undefined;
-      try {
-        const { WhoopClient } = await import('./utils/whoop.js');
-        const client = new WhoopClient(config);
-        profile = await client.getProfileBasic();
-      } catch {}
-      res.json({ authenticated: true, profile, token_type: tokens?.token_type || (config.WHOOP_API_KEY ? 'Bearer' : undefined), expiry_date: tokens?.expiry_date, scope: tokens?.scope });
-    } catch (err) { next(err); }
-  });
+      const state = (req.query.state as string) || '';
+      const cookie = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('slack_state='));
+      const stored = cookie ? cookie.split('=')[1] : '';
+      if (stored && state && stored !== state) {
+        res.status(400).send('Invalid state');
+        return;
+      }
+    } catch {}
+    await exchangeSlackCode(config, code);
+    res.send('Slack authentication successful. You can close this window.');
+  }));
+  app.get('/auth/slack/status', asyncHandler(async (_req, res) => {
+    const tokens = await loadSlackTokens(config);
+    if (!tokens?.authed_user?.access_token) {
+      res.json({ authenticated: false });
+      return;
+    }
+    const status = await getSlackStatus(config, logger);
+    res.json({
+      ...status,
+      authed_user: {
+        id: tokens.authed_user?.id,
+        scope: tokens.authed_user?.scope,
+        expires_at: tokens.authed_user?.expires_at,
+      },
+      team: tokens.team,
+    });
+  }));
 
   // Kraken status: report env presence and auth check
-  app.get('/auth/kraken/status', async (req, res, next) => {
-    try {
-      const hasKey = Boolean(config.KRAKEN_API_KEY);
-      const hasSecret = Boolean(config.KRAKEN_API_SECRET);
-      let authorized: boolean | undefined;
-      let error: string | undefined;
-      if (hasKey && hasSecret) {
-        try {
-          const k = new KrakenClient(config);
-          // Attempt a lightweight private call to verify credentials
-          await k.getBalance();
-          authorized = true;
-        } catch (e: any) {
-          authorized = false;
-          error = e?.message || String(e);
-        }
+  app.get('/auth/kraken/status', asyncHandler(async (_req, res) => {
+    const hasKey = Boolean(config.KRAKEN_API_KEY);
+    const hasSecret = Boolean(config.KRAKEN_API_SECRET);
+    let authorized: boolean | undefined;
+    let error: string | undefined;
+    if (hasKey && hasSecret) {
+      try {
+        const k = new KrakenClient(config);
+        // Attempt a lightweight private call to verify credentials
+        await k.getBalance();
+        authorized = true;
+      } catch (e: any) {
+        authorized = false;
+        error = e?.message || String(e);
       }
-      res.json({
-        hasKey,
-        hasSecret,
-        authorized,
-        ...(error ? { error } : {}),
-      });
-    } catch (err) { next(err); }
-  });
+    }
+    res.json({
+      hasKey,
+      hasSecret,
+      authorized,
+      ...(error ? { error } : {}),
+    });
+  }));
 
   // Kasa status: report creds and device count
-  app.get('/auth/kasa/status', async (req, res, next) => {
-    try {
-      const hasUser = Boolean(config.KASA_USERNAME);
-      const hasPass = Boolean(config.KASA_PASSWORD);
-      let devices: any[] | undefined;
-      let error: string | undefined;
-      if (hasUser && hasPass) {
-        try {
-          const { getKasaClient } = await import('./utils/kasa.js');
-          const kasa = getKasaClient(config);
-          devices = await kasa.getDeviceList();
-        } catch (e: any) {
-          error = e?.message || String(e);
-        }
+  app.get('/auth/kasa/status', asyncHandler(async (_req, res) => {
+    const hasUser = Boolean(config.KASA_USERNAME);
+    const hasPass = Boolean(config.KASA_PASSWORD);
+    let devices: any[] | undefined;
+    let error: string | undefined;
+    if (hasUser && hasPass) {
+      try {
+        const { getKasaClient } = await import('./utils/kasa.js');
+        const kasa = getKasaClient(config);
+        devices = await kasa.getDeviceList();
+      } catch (e: any) {
+        error = e?.message || String(e);
       }
-      res.json({ hasUser, hasPass, deviceCount: devices?.length, devices: devices?.map(d => ({ id: d.deviceId, alias: d.alias, model: d.deviceModel }))?.slice(0, 20), ...(error ? { error } : {}) });
-    } catch (err) { next(err); }
-  });
+    }
+    res.json({ hasUser, hasPass, deviceCount: devices?.length, devices: devices?.map(d => ({ id: d.deviceId, alias: d.alias, model: d.deviceModel }))?.slice(0, 20), ...(error ? { error } : {}) });
+  }));
 
   // GitHub status: token presence + viewer + rate limit
-  app.get('/auth/github/status', async (req, res, next) => {
+  app.get('/auth/github/status', asyncHandler(async (_req, res) => {
+    const { GITHUB_TOKEN } = config;
+    if (!GITHUB_TOKEN) {
+      res.json({ authenticated: false });
+      return;
+    }
     try {
-      const { GITHUB_TOKEN } = config;
-      if (!GITHUB_TOKEN) return res.json({ authenticated: false });
-      try {
-        const { getRateStatus } = await import('./utils/github.js');
-        const data = await getRateStatus(GITHUB_TOKEN);
-        res.json({ authenticated: true, login: data.viewer?.login, rateLimit: data.rateLimit });
-      } catch (e: any) {
-        return res.json({ authenticated: false, error: e?.message || String(e) });
-      }
-    } catch (err) { next(err); }
-  });
+      const { getRateStatus } = await import('./utils/github.js');
+      const data = await getRateStatus(GITHUB_TOKEN);
+      res.json({ authenticated: true, login: data.viewer?.login, rateLimit: data.rateLimit });
+    } catch (e: any) {
+      res.json({ authenticated: false, error: e?.message || String(e) });
+    }
+  }));
 
   // Stripe status: token presence + account details
-  app.get('/auth/stripe/status', async (req, res, next) => {
+  app.get('/auth/stripe/status', asyncHandler(async (_req, res) => {
+    const { STRIPE_API_KEY, STRIPE_ACCOUNT } = config;
+    if (!STRIPE_API_KEY) {
+      res.json({ authenticated: false });
+      return;
+    }
     try {
-      const { STRIPE_API_KEY, STRIPE_ACCOUNT } = config;
-      if (!STRIPE_API_KEY) return res.json({ authenticated: false });
-      try {
-        const { getAccountStatus } = await import('./utils/stripe.js');
-        const acct = await getAccountStatus(STRIPE_API_KEY, STRIPE_ACCOUNT);
-        res.json({ authenticated: true, account: { id: acct.id, email: acct.email, default_currency: acct.default_currency } });
-      } catch (e: any) {
-        return res.json({ authenticated: false, error: e?.message || String(e) });
-      }
-    } catch (err) { next(err); }
-  });
+      const { getAccountStatus } = await import('./utils/stripe.js');
+      const acct = await getAccountStatus(STRIPE_API_KEY, STRIPE_ACCOUNT);
+      res.json({ authenticated: true, account: { id: acct.id, email: acct.email, default_currency: acct.default_currency } });
+    } catch (e: any) {
+      res.json({ authenticated: false, error: e?.message || String(e) });
+    }
+  }));
 
   // MCP server
   const mcp = new McpServer({

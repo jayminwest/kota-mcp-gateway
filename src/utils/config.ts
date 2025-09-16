@@ -5,7 +5,7 @@ dotenv.config();
 
 const ConfigSchema = z.object({
   NODE_ENV: z.string().default('production'),
-  PORT: z.coerce.number().default(3000),
+  PORT: z.coerce.number().default(8081),
   LOG_LEVEL: z.string().default('info'),
   HEALTH_PATH: z.string().default('/health'),
 
@@ -32,14 +32,17 @@ const ConfigSchema = z.object({
 
   KASA_USERNAME: z.string().optional(),
   KASA_PASSWORD: z.string().optional(),
-  KASA_LAN_ONLY: z.string().optional(),
-  KASA_LAN_DISCOVERY_MS: z.coerce.number().optional(),
+  KASA_LAN_ONLY: z.coerce.boolean().optional(),
+  KASA_LAN_DISCOVERY_MS: z.coerce.number().optional().default(3000),
 
   KRAKEN_API_KEY: z.string().optional(),
   KRAKEN_API_SECRET: z.string().optional(),
   RIZE_API_KEY: z.string().optional(),
   SLACK_BOT_TOKEN: z.string().optional(),
   SLACK_SIGNING_SECRET: z.string().optional(),
+  SLACK_CLIENT_ID: z.string().optional(),
+  SLACK_CLIENT_SECRET: z.string().optional(),
+  SLACK_REDIRECT_URI: z.string().optional(),
 
   MCP_AUTH_TOKEN: z.string().optional(),
 

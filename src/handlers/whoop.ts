@@ -4,15 +4,19 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { WhoopClient } from '../utils/whoop.js';
 
-const RangeShape = {
+const RangeSchema = z.object({
   start: z.string().describe('ISO start time').optional(),
   end: z.string().describe('ISO end time').optional(),
-  limit: z.number().int().positive().max(25).default(10).optional(),
+  limit: z.coerce.number().int().positive().max(25).optional(),
   next_token: z.string().optional(),
-  all: z.boolean().default(false).optional(),
-  max_pages: z.number().int().positive().max(100).default(10).optional(),
-  max_items: z.number().int().positive().max(1000).default(50).optional(),
-};
+  all: z.boolean().optional(),
+  max_pages: z.coerce.number().int().positive().max(100).optional(),
+  max_items: z.coerce.number().int().positive().max(1000).optional(),
+}).strip();
+
+const SleepIdSchema = z.object({ sleep_id: z.string() }).strip();
+const WorkoutIdSchema = z.object({ workout_id: z.string() }).strip();
+const CycleIdSchema = z.object({ cycle_id: z.coerce.number().int().positive() }).strip();
 
 export class WhoopHandler extends BaseHandler {
   readonly prefix = 'whoop';
@@ -21,16 +25,16 @@ export class WhoopHandler extends BaseHandler {
     return [
       { action: 'get_profile', description: 'Get basic user profile (name/email)', inputSchema: {} },
       { action: 'get_body_measurements', description: 'Get user body measurements (height, weight, max HR)', inputSchema: {} },
-      { action: 'get_recovery', description: 'List recoveries (paged)', inputSchema: RangeShape },
-      { action: 'get_sleep', description: 'List sleeps (paged)', inputSchema: RangeShape },
-      { action: 'get_workouts', description: 'List workouts (paged)', inputSchema: RangeShape },
-      { action: 'get_cycles', description: 'List cycles (paged)', inputSchema: RangeShape },
+      { action: 'get_recovery', description: 'List recoveries (paged)', inputSchema: RangeSchema.shape },
+      { action: 'get_sleep', description: 'List sleeps (paged)', inputSchema: RangeSchema.shape },
+      { action: 'get_workouts', description: 'List workouts (paged)', inputSchema: RangeSchema.shape },
+      { action: 'get_cycles', description: 'List cycles (paged)', inputSchema: RangeSchema.shape },
       // By-ID and cycle subresources
-      { action: 'get_sleep_by_id', description: 'Get a sleep by UUID', inputSchema: { sleep_id: z.string() } },
-      { action: 'get_workout_by_id', description: 'Get a workout by UUID', inputSchema: { workout_id: z.string() } },
-      { action: 'get_cycle_by_id', description: 'Get a cycle by ID', inputSchema: { cycle_id: z.number().int().positive() } },
-      { action: 'get_cycle_recovery', description: 'Get recovery for a cycle', inputSchema: { cycle_id: z.number().int().positive() } },
-      { action: 'get_cycle_sleep', description: 'Get sleep for a cycle', inputSchema: { cycle_id: z.number().int().positive() } },
+      { action: 'get_sleep_by_id', description: 'Get a sleep by UUID', inputSchema: SleepIdSchema.shape },
+      { action: 'get_workout_by_id', description: 'Get a workout by UUID', inputSchema: WorkoutIdSchema.shape },
+      { action: 'get_cycle_by_id', description: 'Get a cycle by ID', inputSchema: CycleIdSchema.shape },
+      { action: 'get_cycle_recovery', description: 'Get recovery for a cycle', inputSchema: CycleIdSchema.shape },
+      { action: 'get_cycle_sleep', description: 'Get sleep for a cycle', inputSchema: CycleIdSchema.shape },
     ];
   }
 
@@ -63,23 +67,28 @@ export class WhoopHandler extends BaseHandler {
           return this.pagedResult('Cycles', data);
         }
         case 'get_sleep_by_id': {
-          const data = await client.getSleepById(String(args?.sleep_id));
+          const { sleep_id } = this.parseArgs(SleepIdSchema, args);
+          const data = await client.getSleepById(sleep_id);
           return this.jsonResult(data, 'Sleep');
         }
         case 'get_workout_by_id': {
-          const data = await client.getWorkoutById(String(args?.workout_id));
+          const { workout_id } = this.parseArgs(WorkoutIdSchema, args);
+          const data = await client.getWorkoutById(workout_id);
           return this.jsonResult(data, 'Workout');
         }
         case 'get_cycle_by_id': {
-          const data = await client.getCycleById(Number(args?.cycle_id));
+          const { cycle_id } = this.parseArgs(CycleIdSchema, args);
+          const data = await client.getCycleById(cycle_id);
           return this.jsonResult(data, 'Cycle');
         }
         case 'get_cycle_recovery': {
-          const data = await client.getCycleRecovery(Number(args?.cycle_id));
+          const { cycle_id } = this.parseArgs(CycleIdSchema, args);
+          const data = await client.getCycleRecovery(cycle_id);
           return this.jsonResult(data, 'Cycle Recovery');
         }
         case 'get_cycle_sleep': {
-          const data = await client.getCycleSleep(Number(args?.cycle_id));
+          const { cycle_id } = this.parseArgs(CycleIdSchema, args);
+          const data = await client.getCycleSleep(cycle_id);
           return this.jsonResult(data, 'Cycle Sleep');
         }
         default:
@@ -91,15 +100,16 @@ export class WhoopHandler extends BaseHandler {
     }
   }
 
-  private toParams(args: any) {
+  private toParams(args: unknown) {
+    const parsed = this.parseArgs(RangeSchema, args);
     return {
-      start: args?.start,
-      end: args?.end,
-      limit: args?.limit,
-      nextToken: args?.next_token,
-      all: args?.all,
-      maxPages: args?.max_pages,
-      maxItems: args?.max_items,
+      start: parsed.start,
+      end: parsed.end,
+      limit: parsed.limit ?? 10,
+      nextToken: parsed.next_token,
+      all: parsed.all ?? false,
+      maxPages: parsed.max_pages ?? 10,
+      maxItems: parsed.max_items ?? 50,
     };
   }
 

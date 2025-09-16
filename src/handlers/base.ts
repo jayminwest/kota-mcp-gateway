@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Logger } from '../utils/logger.js';
 import type { HandlerConfig, ToolSpec } from '../types/index.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -15,4 +16,8 @@ export abstract class BaseHandler {
 
   abstract getTools(): ToolSpec[];
   abstract execute(action: string, args: any): Promise<CallToolResult>;
+
+  protected parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
+    return schema.parse(args ?? {});
+  }
 }

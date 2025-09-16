@@ -6,6 +6,14 @@ import { assertGitHubToken, getUserContributions, getViewerLogin, parseDateOrDef
 
 const DetailEnum = z.enum(['numbers', 'titles', 'full']);
 
+const ActivitySummarySchema = z.object({
+  start: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to 7 days ago.'),
+  end: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to now.'),
+  detail: DetailEnum.optional().describe('Level of detail: numbers | titles | full'),
+  username: z.string().optional().describe('GitHub username; defaults to viewer or GITHUB_USERNAME'),
+  max_items: z.coerce.number().int().positive().max(100).optional().describe('Max list items for titles/full (default 20).'),
+}).strip();
+
 export class GitHubHandler extends BaseHandler {
   readonly prefix = 'github';
 
@@ -14,13 +22,7 @@ export class GitHubHandler extends BaseHandler {
       {
         action: 'activity_summary',
         description: 'Summarize GitHub activity for a user within a timeframe. Supports detail levels: numbers, titles, full.',
-        inputSchema: {
-          start: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to 7 days ago.'),
-          end: z.string().optional().describe('ISO date/time or YYYY-MM-DD. Defaults to now.'),
-          detail: DetailEnum.optional().describe('Level of detail: numbers | titles | full'),
-          username: z.string().optional().describe('GitHub username; defaults to viewer or GITHUB_USERNAME'),
-          max_items: z.number().int().positive().max(100).optional().describe('Max list items for titles/full (default 20).'),
-        },
+        inputSchema: ActivitySummarySchema.shape,
       },
     ];
   }
@@ -34,14 +36,8 @@ export class GitHubHandler extends BaseHandler {
     }
   }
 
-  private async activitySummary(args: any): Promise<CallToolResult> {
-    const parsed = z.object({
-      start: z.string().optional(),
-      end: z.string().optional(),
-      detail: DetailEnum.default('numbers').optional(),
-      username: z.string().optional(),
-      max_items: z.number().int().positive().max(100).default(20).optional(),
-    }).parse(args || {});
+  private async activitySummary(args: unknown): Promise<CallToolResult> {
+    const parsed = this.parseArgs(ActivitySummarySchema, args);
 
     const token = assertGitHubToken(this.config);
 
@@ -58,9 +54,12 @@ export class GitHubHandler extends BaseHandler {
     if (!login) login = await getViewerLogin(token);
 
     // Fetch contributions and mentions
+    const detail = parsed.detail ?? 'numbers';
+    const maxItems = parsed.max_items ?? 20;
+
     const [contrib, mentions] = await Promise.all([
       getUserContributions(token, { login, fromISO, toISO }),
-      parsed.detail === 'numbers' ? Promise.resolve(null) : searchMentions(token, login, fromDateOnly, toDateOnly, parsed.max_items || 20),
+      detail === 'numbers' ? Promise.resolve(null) : searchMentions(token, login, fromDateOnly, toDateOnly, maxItems),
     ]);
 
     const c = contrib.user.contributionsCollection;
@@ -111,8 +110,8 @@ export class GitHubHandler extends BaseHandler {
       for (const [repo, score] of topRepos) lines.push(`- ${repo}: ${score} activities`);
     }
 
-    if (parsed.detail !== 'numbers') {
-      const max = parsed.max_items || 20;
+    if (detail !== 'numbers') {
+      const max = maxItems;
       const prList = prNodes.slice(0, max).map((n: any) => `• PR: ${n.pullRequest.title} — ${n.pullRequest.url}`);
       const issueList = issueNodes.slice(0, max).map((n: any) => `• Issue: ${n.issue.title} — ${n.issue.url}`);
       const reviewList = reviewNodes.slice(0, max).map((n: any) => `• Review on: ${n.pullRequest.title} — ${n.pullRequest.url}`);
@@ -127,7 +126,7 @@ export class GitHubHandler extends BaseHandler {
         lines.push(`Issues (${Math.min(issueList.length, max)} shown):`);
         lines.push(...issueList);
       }
-      if (reviewList.length && parsed.detail === 'full') {
+      if (reviewList.length && detail === 'full') {
         lines.push('');
         lines.push(`Reviews (${Math.min(reviewList.length, max)} shown):`);
         lines.push(...reviewList);
@@ -139,7 +138,7 @@ export class GitHubHandler extends BaseHandler {
         lines.push(...mentionList);
       }
 
-      if (parsed.detail !== 'full') {
+      if (detail !== 'full') {
         lines.push('');
         lines.push('Note: Commit messages are not listed in this mode.');
       }
