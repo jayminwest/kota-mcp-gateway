@@ -9,6 +9,9 @@ Handlers Index
 - WHOOP (v2 API): WHOOP.md
 - Kraken (Crypto): KRAKEN.md
 - Rize (GraphQL API): RIZE.md
+- Daily Logs: DAILY.md (nutrition/vitals aliases)
+- KOTA Memory System: MEMORY.md
+- Workspace Navigator: WORKSPACE.md
 - Adding New Handlers: ADDING_HANDLERS.md
 
 Common Concepts

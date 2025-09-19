@@ -126,10 +126,14 @@ async function ensureAccessToken(config: AppConfig): Promise<string> {
   const current = await loadWhoopTokens(config);
   if (!current?.access_token) throw new Error('WHOOP not authenticated. Visit /auth/whoop/start');
   const margin = 60_000; // 60s margin
-  if (current.expiry_date && current.expiry_date - margin > Date.now()) {
+  const expiry = current.expiry_date ?? 0;
+  const valid = expiry ? expiry - margin > Date.now() : true;
+  if (valid) {
     return current.access_token;
   }
-  if (!current.refresh_token) return current.access_token; // try anyway
+  if (!current.refresh_token) {
+    throw new Error('WHOOP access token expired and no refresh token is available. Re-authenticate to grant offline access.');
+  }
   const refreshed = await refreshWhoopToken(config, current.refresh_token);
   return refreshed.access_token;
 }

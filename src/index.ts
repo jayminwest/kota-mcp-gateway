@@ -17,10 +17,15 @@ import { RizeHandler } from './handlers/rize.js';
 import { SlackHandler } from './handlers/slack.js';
 import { GitHubHandler } from './handlers/github.js';
 import { StripeHandler } from './handlers/stripe.js';
+import { MemoryHandler } from './handlers/memory.js';
+import { DailyHandler } from './handlers/daily.js';
+import { WorkspaceHandler } from './handlers/workspace.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
 import { generateSlackState, getSlackAuthUrl, exchangeSlackCode, getSlackStatus, loadSlackTokens } from './utils/slack.js';
+import { WebhookManager } from './webhooks/manager.js';
+import { loadWebhookConfig } from './utils/webhook-config.js';
 
 function asyncHandler<
   T extends (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
@@ -35,9 +40,18 @@ async function main() {
   const app = express();
 
   app.use(cors());
-  app.use(express.json({ limit: '4mb' }));
+  app.use(express.json({
+    limit: '4mb',
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = Buffer.from(buf);
+    },
+  }));
   app.use(correlationIdMiddleware);
   app.use(optionalAuthMiddleware(config.MCP_AUTH_TOKEN));
+
+  const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
+  const webhookManager = new WebhookManager({ app, config, logger, webhookConfig });
+  webhookManager.register();
 
   // Health endpoint
   app.get(config.HEALTH_PATH, (req, res) => {
@@ -94,6 +108,12 @@ async function main() {
     res.redirect(302, url);
   }));
   app.get('/auth/whoop/callback', asyncHandler(async (req, res) => {
+    const error = (req.query.error as string) || '';
+    const errorDescription = (req.query.error_description as string) || '';
+    if (error) {
+      res.status(400).send(`WHOOP authorization failed: ${error}${errorDescription ? ` - ${errorDescription}` : ''}`);
+      return;
+    }
     const code = (req.query.code as string) || '';
     if (!code) {
       res.status(400).send('Missing code');
@@ -124,7 +144,14 @@ async function main() {
       const client = new WhoopClient(config);
       profile = await client.getProfileBasic();
     } catch {}
-    res.json({ authenticated: true, profile, token_type: tokens?.token_type || (config.WHOOP_API_KEY ? 'Bearer' : undefined), expiry_date: tokens?.expiry_date, scope: tokens?.scope });
+    res.json({
+      authenticated: true,
+      profile,
+      token_type: tokens?.token_type || (config.WHOOP_API_KEY ? 'Bearer' : undefined),
+      expiry_date: tokens?.expiry_date,
+      scope: tokens?.scope,
+      has_refresh_token: Boolean(tokens?.refresh_token),
+    });
   }));
 
   // Slack OAuth endpoints
@@ -252,8 +279,8 @@ async function main() {
   }, {
     instructions: [
       'KOTA MCP Gateway usage:',
-      '- Prefer typed tools when available (e.g., rize_get_client_time_spent, whoop_get_recovery).',
-      '- For Rize GraphQL, first call rize_introspect to learn fields; then use rize_execute_query.',
+      '- Prefer typed tools when available (e.g., rize_time_entries, whoop_get_recovery).',
+      '- Rize handler exposes curated queries like rize_current_user, rize_recent_projects, rize_recent_tasks, and rize_time_entries.',
       '- WHOOP v2 endpoints are paginated. Use limit/start/end and control page size via max_pages/max_items.',
       '- Google: authorize via /auth/google/start; WHOOP: /auth/whoop/start; status routes available under /auth/*/status.',
     ].join('\n')
@@ -277,21 +304,28 @@ async function main() {
     make(SlackHandler),
     make(GitHubHandler),
     make(StripeHandler),
+    make(MemoryHandler),
+    make(DailyHandler),
+    make(WorkspaceHandler),
   ];
 
   for (const handler of handlers) {
+    const prefixes = [handler.prefix, ...(handler.aliases ?? [])];
+    const uniquePrefixes = Array.from(new Set(prefixes));
     for (const spec of handler.getTools()) {
-      const name = `${handler.prefix}_${spec.action}`;
-      mcp.registerTool(name, {
-        description: spec.description,
-        inputSchema: spec.inputSchema,
-        outputSchema: spec.outputSchema,
-      }, async (args: any, extra) => {
-        const res = await handler.execute(spec.action, args ?? {});
-        logger.debug({ tool: name, args, sessionId: extra?.sessionId }, 'Tool executed');
-        return res;
-      });
-      logger.info({ tool: name, prefix: handler.prefix }, 'Tool registered');
+      for (const prefix of uniquePrefixes) {
+        const name = `${prefix}_${spec.action}`;
+        mcp.registerTool(name, {
+          description: spec.description,
+          inputSchema: spec.inputSchema,
+          outputSchema: spec.outputSchema,
+        }, async (args: any, extra) => {
+          const res = await handler.execute(spec.action, args ?? {});
+          logger.debug({ tool: name, args, sessionId: extra?.sessionId }, 'Tool executed');
+          return res;
+        });
+        logger.info({ tool: name, prefix }, 'Tool registered');
+      }
     }
   }
 
@@ -311,8 +345,8 @@ async function main() {
       'KOTA MCP Help Index',
       '',
       'General:',
-      '- Use typed tools when available (e.g., rize_get_client_time_spent, whoop_get_recovery).',
-      '- For raw GraphQL (Rize), call rize_introspect first to learn fields; then rize_execute_query.',
+      '- Use typed tools when available (e.g., rize_time_entries, whoop_get_recovery).',
+      '- Rize tools run curated queries: rize_current_user, rize_recent_projects, rize_recent_tasks, rize_time_entries.',
       '- WHOOP: paginate with { limit, start, end, all, max_pages, max_items } to manage sizes.',
       '- Auth routes: /auth/google/start, /auth/whoop/start, and /auth/*/status.',
       '',
@@ -322,6 +356,9 @@ async function main() {
       '- help://kraken/usage',
       '- help://google/usage',
       '- help://github/usage',
+      '- help://daily/usage (aliases: help://nutrition/usage, help://vitals/usage)',
+      '- help://memory/usage',
+      '- help://workspace/usage',
     ].join('\n')
   );
 
@@ -332,15 +369,10 @@ async function main() {
       'Rize Help',
       '',
       'Typed tools:',
-      '- rize_get_current_user {}',
-      '- rize_list_projects { first?: number }',
-      '- rize_list_tasks { first?: number }',
-      '- rize_list_client_time_entries { startTime, endTime, client_name?, limit? }',
-      '- rize_get_client_time_spent { startTime, endTime, client_name }',
-      '',
-      'Raw GraphQL:',
-      '- rize_introspect { partial?: boolean }',
-      '- rize_execute_query { query, variables? }',
+      '- rize_current_user {}',
+      '- rize_recent_projects { first?: number }',
+      '- rize_recent_tasks { first?: number }',
+      '- rize_time_entries { startTime, endTime, client_name?, limit? }',
     ].join('\n')
   );
 
@@ -401,6 +433,49 @@ async function main() {
     ].join('\n')
   );
 
+  const dailyHelpText = [
+    'Daily Log Help',
+    '',
+    'Primary tools:',
+    '- daily_log_day { date, entries, summary?, notes?, totals?, rawText?, metadata?, timezone? }',
+    '- daily_append_entries { date, entries, summary?, notes?, totals?, rawText?, metadata?, timezone? }',
+    '- daily_get_day { date }',
+    '- daily_list_days {}',
+    '- daily_delete_day { date }',
+    '',
+    'Aliases (same input schema):',
+    '- nutrition_log_day / nutrition_append_entries / ...',
+    '- vitals_log_day / vitals_append_entries / ...',
+    '',
+    'Notes:',
+    '- Entries can represent food, drink, supplements, substances, activities, training sessions, and free-form notes.',
+    '- Provide structured metrics when available (e.g., duration_minutes, metrics.heart_rate_avg, macros.calories).',
+    '- Use list_days before/after logging to confirm persisted changes.',
+  ].join('\n');
+
+  registerHelpResource('daily_help_usage', 'help://daily/usage', dailyHelpText);
+  registerHelpResource('nutrition_help_usage', 'help://nutrition/usage', dailyHelpText);
+  registerHelpResource('vitals_help_usage', 'help://vitals/usage', dailyHelpText);
+
+  registerHelpResource(
+    'workspace_help_usage',
+    'help://workspace/usage',
+    [
+      'Workspace Handler Help',
+      '',
+      'Tools:',
+      '- workspace_map { path?, search?, max_depth?, limit?, include_snippets?, context?, mode?, exclude?, time_format? }',
+      '',
+      'Tips:',
+      '- `path` scopes the map to a subdirectory inside DATA_DIR.',
+      '- `search` filters by names, tags, topics, KOTA versions, and cross-references.',
+      '- Default call returns a compact stats digest; switch to `mode: "explore"` for tree view.',
+      '- `context: "summary"` keeps explore results lean; use `"detailed"` for full metadata.',
+      '- Use `exclude` to drop noisy folders (e.g., `node_modules`) and `time_format` for relative timestamps.',
+      '- Snippets are only included when `context` is `"detailed"` and `include_snippets` is true.',
+    ].join('\n')
+  );
+
   registerHelpResource(
     'github_help_usage',
     'help://github/usage',
@@ -416,6 +491,28 @@ async function main() {
       '',
       'Notes:',
       '- Uses GitHub GraphQL contributions; commit messages are not listed. PRs/issues and mentions are included.',
+    ].join('\n')
+  );
+
+  registerHelpResource(
+    'memory_help_usage',
+    'help://memory/usage',
+    [
+      'KOTA Memory Help',
+      '',
+      'Tools:',
+      '- memory_set { key, value, category? }',
+      '- memory_get { query }',
+      '- memory_update { key, addition }',
+      '- memory_list {}',
+      '- memory_list_archived {}',
+      '- memory_delete { key }',
+      '- memory_clear_state {}',
+      '',
+      'Notes:',
+      '- Data stored under data/kota_memory with metadata.json for auditability.',
+      '- Entries unused for 90 days are archived (not deleted) and still searchable.',
+      '- Entries respect 500B per entry / 50KB total limits; clear_state archives the current state snapshot.',
     ].join('\n')
   );
 
@@ -446,10 +543,10 @@ async function main() {
         role: 'assistant',
         content: { type: 'text', text: [
           'Examples:',
-          '- rize_get_current_user {}',
-          '- rize_list_projects { "first": 5 }',
-          '- rize_get_client_time_spent { "client_name": "Acme", "startTime": "2025-09-01T00:00:00Z", "endTime": "2025-09-30T23:59:59Z" }',
-          '- rize_execute_query { "query": "query { currentUser { name email } }" }',
+          '- rize_current_user {}',
+          '- rize_recent_projects { "first": 5 }',
+          '- rize_recent_tasks { "first": 5 }',
+          '- rize_time_entries { "startTime": "2025-09-01T00:00:00Z", "endTime": "2025-09-15T23:59:59Z", "client_name": "Acme" }',
         ].join('\n') },
       },
     ],

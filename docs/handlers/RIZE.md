@@ -7,29 +7,20 @@ Auth
 - Add `RIZE_API_KEY` to `.env` (Bearer token)
 
 Tools
-- `rize_execute_query` — Run arbitrary GraphQL queries
-  - Args: `{ "query": "...", "variables": { ... } }`
-- `rize_introspect` — Fetch schema metadata
-  - Args: `{ "partial": true }` (set false for more detail; may be large)
+- `rize_current_user` — Fetch the authenticated user (name, email)
+  - Args: `{}`
+- `rize_recent_projects` — List recently created or updated projects (default 10)
+  - Args: `{ "first": 10 }`
+- `rize_recent_tasks` — List recently created or updated tasks (default 10)
+  - Args: `{ "first": 10 }`
+- `rize_time_entries` — Fetch client time entries within a date window and return summary totals
+  - Args: `{ "startTime": "2024-05-01T00:00:00Z", "endTime": "2024-05-31T23:59:59Z", "client_name": "Acme", "limit": 50 }`
 
 Examples
-- Introspect (partial): `{ "partial": true }`
-- Query (example):
-  - Query string:
-    ```
-    query Sessions($from: String!, $to: String!) {
-      sessions(from: $from, to: $to) {
-        id
-        start
-        end
-        app
-        category
-      }
-    }
-    ```
-  - Variables:
-    `{ "from": "2025-09-01T00:00:00Z", "to": "2025-09-15T23:59:59Z" }`
+- Current user: `{}`
+- Recent projects (5): `{ "first": 5 }`
+- Time entries with summary: `{ "startTime": "2024-06-01T00:00:00Z", "endTime": "2024-06-07T00:00:00Z", "client_name": "Acme", "limit": 25 }`
 
 Notes
-- Schema names may differ; use `rize_introspect` first to discover available types/fields.
-- Large results: paginate or limit fields to avoid hitting client token limits.
+- Tools run curated queries so you do not need to remember the schema.
+- Large result sets are truncated to `limit` (defaults to 100).
