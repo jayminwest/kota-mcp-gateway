@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${PORT:-8081}"
+PORT="${PORT:-8084}"
 PATH_PART="${HEALTH_PATH:-/health}"
 if [[ "${PATH_PART}" != /* ]]; then
   PATH_PART="/${PATH_PART}"

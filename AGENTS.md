@@ -29,7 +29,7 @@
 ## Testing Guidelines
 - No unit test framework configured yet.
 - Validate with `npm run typecheck` and `npm run lint`.
-- Smoke tests: `curl http://localhost:8081/health` and `/auth/*/status` routes.
+- Smoke tests: `curl http://localhost:8084/health` and `/auth/*/status` routes.
 - For new features, document in `docs/handlers/` and include example curl/MCP calls in PRs. If adding tests, Jest/Vitest are acceptable.
 
 ## Commit & Pull Request Guidelines

@@ -1,6 +1,6 @@
 KOTA MCP Gateway
 
-Unified Model Context Protocol (MCP) gateway that consolidates KOTA tools behind a single HTTP server running at http://localhost:8081 (default).
+Unified Model Context Protocol (MCP) gateway that consolidates KOTA tools behind a single HTTP server running at http://localhost:8084 (default).
 
 Features
 - Single connection point for MCP clients
@@ -38,7 +38,7 @@ MCP Client Config
       "args": [
         "-y",
         "@modelcontextprotocol/server-http-client",
-        "http://localhost:8081"
+        "http://localhost:8084"
       ]
     }
   }
@@ -49,6 +49,7 @@ Docker
 - Default mounts:
   - `./data:/app/data`
   - `~/.kota:/root/.kota:ro`
+- Nightly backups: see `README.md#backups` for the cron-based snapshot routine.
 
 Rebuild and Restart (quick commands)
 - Rebuild image and start fresh (best after code changes):
@@ -60,14 +61,17 @@ Rebuild and Restart (quick commands)
 - View logs:
   - `docker-compose logs -f`
 - Health checks:
-  - `curl http://localhost:8081/health`
-  - `curl http://localhost:8081/auth/google/status`
+  - `curl http://localhost:8084/health`
+  - `curl http://localhost:8084/auth/google/status`
 
 Adding New Handlers
 1. Create a class extending `BaseHandler` in `src/handlers/`.
 2. Implement `prefix`, `getTools()`, and `execute(action, args)`.
 3. Register in `src/index.ts` by adding the handler to the `handlers` array.
 4. Add any config keys to `.env.example`.
+
+Backups
+- Nightly cron job copies `data/` to `/Volumes/kota_ssd/backups/<timestamp>/` using `scripts/backup-data-to-ssd.sh`.
 
 Notes
 - Handlers added/expanded incrementally; see docs/handlers for per-service guides.

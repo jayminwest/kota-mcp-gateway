@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-const defaultPort = process.env.PORT || '8081';
+const defaultPort = process.env.PORT || '8084';
 const healthPath = process.env.HEALTH_PATH || '/health';
 const url = process.env.HEALTH_URL || `http://localhost:${defaultPort}${healthPath.startsWith('/') ? healthPath : `/${healthPath}`}`;
 

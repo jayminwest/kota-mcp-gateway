@@ -17,7 +17,7 @@ Requirements
   - OAuth2 client creds (recommended):
     - `WHOOP_CLIENT_ID=<your_client_id>`
     - `WHOOP_CLIENT_SECRET=<your_client_secret>`
-    - Optional: `WHOOP_REDIRECT_URI` (defaults to `http://localhost:8081/auth/whoop/callback`)
+    - Optional: `WHOOP_REDIRECT_URI` (defaults to `http://localhost:8084/auth/whoop/callback`)
   - OR a short‑lived WHOOP API access token (fallback):
     - `WHOOP_API_KEY=<your_bearer_token>`
 
@@ -32,18 +32,18 @@ Notes on tokens
 
 OAuth flow (recommended)
 - Set `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `.env` (and optionally `WHOOP_REDIRECT_URI`).
-- Start auth in a browser: `http://localhost:8081/auth/whoop/start`
+- Start auth in a browser: `http://localhost:8084/auth/whoop/start`
   - You’ll be prompted to consent. The gateway requests the scopes:
     `read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles`
 - After redirect back to the gateway, tokens are stored at `./data/whoop/tokens.json`.
-- Verify auth: `curl http://localhost:8081/auth/whoop/status`
+- Verify auth: `curl http://localhost:8084/auth/whoop/status`
   - Response includes `{ authenticated, profile, token_type, expiry_date, scope }`
   - If a `refresh_token` was issued, the server refreshes automatically when near expiry.
 
 Re‑auth steps
 - If auth seems expired or you didn’t get a `refresh_token`:
   1) Ensure `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` are set in `.env`.
-  2) Visit `http://localhost:8081/auth/whoop/start` again.
+  2) Visit `http://localhost:8084/auth/whoop/start` again.
   3) Accept consent when prompted (the gateway forces `prompt=consent` and `access_type=offline` to obtain a refresh token).
   4) Check `GET /auth/whoop/status` to confirm.
   - If needed, remove `./data/whoop/tokens.json` and repeat to force a clean re‑auth.

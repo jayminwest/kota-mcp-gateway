@@ -12,7 +12,7 @@ Prerequisites
 -------------
 - Slack workspace where you can create/manage apps.
 - Slack app created at https://api.slack.com/apps.
-- Gateway running locally (default port: 8081).
+- Gateway running locally (default port: 8084).
 
 Required scopes
 ---------------
@@ -35,12 +35,12 @@ Copy `.env.example` to `.env` if you have not already, then set:
 SLACK_CLIENT_ID=your_app_client_id
 SLACK_CLIENT_SECRET=your_app_client_secret
 SLACK_SIGNING_SECRET=optional_if_needed_later
-SLACK_REDIRECT_URI=http://localhost:8081/auth/slack/callback
+SLACK_REDIRECT_URI=http://localhost:8084/auth/slack/callback
 ```
 
 OAuth flow
 ----------
-1. **Start the gateway** with `npm run dev` (or use Docker) so it listens on port 8081.
+1. **Start the gateway** with `npm run dev` (or use Docker) so it listens on port 8084.
 2. **Expose HTTPS** by launching the tunnel helper:
    ```
    npm run tunnel:slack
@@ -48,14 +48,14 @@ OAuth flow
    The script prints something like:
    ```
    Slack tunnel ready
-     Local port: 8081
+     Local port: 8084
      Public base: https://your-subdomain.loca.lt
      OAuth redirect URL: https://your-subdomain.loca.lt/auth/slack/callback
    ```
    Copy the HTTPS redirect URL.
 3. **Configure the app**: in Slack → OAuth & Permissions → Redirect URLs, paste the HTTPS URL and save.
 4. **Authorize**: visit `https://your-subdomain.loca.lt/auth/slack/start` while the tunnel and server are running, then approve the consent screen. You should see “Slack authentication successful.” Tokens are saved to `data/slack/tokens.json`.
-5. **Verify**: `curl https://your-subdomain.loca.lt/auth/slack/status` (or later `http://localhost:8081/auth/slack/status`). A successful response shows `{ "authenticated": true, ... }`.
+5. **Verify**: `curl https://your-subdomain.loca.lt/auth/slack/status` (or later `http://localhost:8084/auth/slack/status`). A successful response shows `{ "authenticated": true, ... }`.
 6. **Use tools**: in your MCP client, call `slack_list_conversations` or `slack_get_messages`. Provide a conversation ID (e.g., `C012345`) and optional pagination parameters. Set `only_self=true` to filter to your own messages.
 
 Manual token placement

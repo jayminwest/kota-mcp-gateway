@@ -5,7 +5,7 @@ dotenv.config();
 
 const ConfigSchema = z.object({
   NODE_ENV: z.string().default('production'),
-  PORT: z.coerce.number().default(8081),
+  PORT: z.coerce.number().default(8084),
   LOG_LEVEL: z.string().default('info'),
   HEALTH_PATH: z.string().default('/health'),
 

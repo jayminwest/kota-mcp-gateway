@@ -3,7 +3,7 @@
 import { URL } from 'node:url';
 import localtunnel from 'localtunnel';
 
-const port = Number(process.env.PORT ?? 8081);
+const port = Number(process.env.PORT ?? 8084);
 const subdomain = process.env.SLACK_TUNNEL_SUBDOMAIN || undefined;
 
 console.log(`Opening Slack tunnel on port ${port}...`);

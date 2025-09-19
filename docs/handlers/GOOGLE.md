@@ -26,8 +26,8 @@ Scopes Used
    - Add your Google account as a Test user
 4. Create Credentials → OAuth client ID:
    - Application type: Web application
-   - Authorized redirect URI (assuming default port 8081):
-     - `http://localhost:8081/auth/google/callback`
+   - Authorized redirect URI (assuming default port 8084):
+     - `http://localhost:8084/auth/google/callback`
    - Save Client ID and Client Secret
 
 2) Configure the Gateway
@@ -35,19 +35,19 @@ Scopes Used
 2. Fill these values:
    - `GOOGLE_CLIENT_ID=<your_client_id>`
    - `GOOGLE_CLIENT_SECRET=<your_client_secret>`
-   - Optional: `GOOGLE_REDIRECT_URI=http://localhost:8081/auth/google/callback`
+   - Optional: `GOOGLE_REDIRECT_URI=http://localhost:8084/auth/google/callback`
 
 3) Start the Gateway
 - Docker (recommended): `docker-compose up -d --build`
 - Local: `npm ci && npm run build && node dist/index.js`
 
 4) Authorize with Google
-- Visit: `http://localhost:8081/auth/google/start`
+- Visit: `http://localhost:8084/auth/google/start`
 - Complete the consent screen. You should see “Google authentication successful.”
 - Tokens are stored at `./data/google/tokens.json` (persisted via Docker volume / local dir).
 
 5) Test Tools
-- From an MCP client (e.g., Claude Code) with `.mcp.json` configured to `http://localhost:8081/mcp`:
+- From an MCP client (e.g., Claude Code) with `.mcp.json` configured to `http://localhost:8084/mcp`:
   - Gmail list: `gmail_list_messages` with `{ "query": "is:unread", "max_results": 10 }`
   - Gmail send: `gmail_send_message` with `{ "to": "you@example.com", "subject": "Hi", "body": "Hello!" }`
   - Calendar list: `calendar_list_events` with `{ "start": "<ISO>", "end": "<ISO>", "max_results": 10 }`
@@ -59,9 +59,9 @@ If you prefer raw JSON‑RPC with curl, include the Accept header:
 H='Content-Type: application/json'
 A='Accept: application/json, text/event-stream'
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}}}'
-curl -sS -H "$H" -H "$A" -d "$INIT" http://localhost:8081/mcp > /dev/null
+curl -sS -H "$H" -H "$A" -d "$INIT" http://localhost:8084/mcp > /dev/null
 LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-curl -sS -H "$H" -H "$A" -d "$LIST" http://localhost:8081/mcp
+curl -sS -H "$H" -H "$A" -d "$LIST" http://localhost:8084/mcp
 ```
 
 Troubleshooting
