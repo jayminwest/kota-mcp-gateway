@@ -43,6 +43,13 @@ const ConfigSchema = z.object({
   SLACK_CLIENT_ID: z.string().optional(),
   SLACK_CLIENT_SECRET: z.string().optional(),
   SLACK_REDIRECT_URI: z.string().optional(),
+  SLACK_USER_TOKEN: z.string().optional(),
+  SLACK_USER_ID: z.string().optional(),
+  SLACK_USER_SCOPE: z.string().optional(),
+  SLACK_USER_REFRESH_TOKEN: z.string().optional(),
+  SLACK_USER_TOKEN_EXPIRES_AT: z.coerce.number().optional(),
+  SLACK_TEAM_ID: z.string().optional(),
+  SLACK_TEAM_NAME: z.string().optional(),
 
   MCP_AUTH_TOKEN: z.string().optional(),
 

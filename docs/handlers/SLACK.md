@@ -29,7 +29,9 @@ In the Slack app dashboard under **OAuth & Permissions → User Token Scopes**, 
 
 Environment variables
 ---------------------
-Copy `.env.example` to `.env` if you have not already, then set:
+Copy `.env.example` to `.env` if you have not already.
+
+For the standard OAuth flow, define:
 
 ```
 SLACK_CLIENT_ID=your_app_client_id
@@ -37,6 +39,26 @@ SLACK_CLIENT_SECRET=your_app_client_secret
 SLACK_SIGNING_SECRET=optional_if_needed_later
 SLACK_REDIRECT_URI=http://localhost:8084/auth/slack/callback
 ```
+
+To skip the browser flow entirely, provide tokens directly via `.env`:
+
+```
+# Required
+SLACK_USER_TOKEN=xoxp-your-user-token
+
+# Recommended for richer metadata / filtering
+SLACK_USER_ID=U01234567
+SLACK_USER_SCOPE=channels:history,groups:history,...
+SLACK_USER_REFRESH_TOKEN=xoxe-refresh-token-if-you-have-one
+SLACK_USER_TOKEN_EXPIRES_AT=1731200000000  # optional, ms epoch
+SLACK_TEAM_ID=T01234567
+SLACK_TEAM_NAME=My Workspace
+
+# Optional bot token if you also use bot operations
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+```
+
+When `SLACK_USER_TOKEN` is present the server uses it immediately and never prompts for `/auth/slack/start`.
 
 OAuth flow
 ----------
@@ -58,9 +80,9 @@ OAuth flow
 5. **Verify**: `curl https://your-subdomain.loca.lt/auth/slack/status` (or later `http://localhost:8084/auth/slack/status`). A successful response shows `{ "authenticated": true, ... }`.
 6. **Use tools**: in your MCP client, call `slack_list_conversations` or `slack_get_messages`. Provide a conversation ID (e.g., `C012345`) and optional pagination parameters. Set `only_self=true` to filter to your own messages.
 
-Manual token placement
-----------------------
-If you already possess tokens:
+Manual token placement (file)
+-----------------------------
+If you prefer to manage tokens outside of environment variables, you can still drop a JSON payload in `data/slack/tokens.json`:
 ```
 {
   "access_token": "xoxb-...",              // optional bot token
@@ -73,13 +95,13 @@ If you already possess tokens:
   "installed_at": 1731096265000
 }
 ```
-Save this JSON to `data/slack/tokens.json`, then restart the gateway.
+The file-based token store is still read if `SLACK_USER_TOKEN` is not defined.
 
 Troubleshooting
 ---------------
 - `npm run tunnel:slack` hangs: set `DEBUG=localtunnel*` before running, or use another tunneling service (ngrok, cloudflared).
 - Slack redirect mismatch: the URL in Slack must match the tunnel output exactly.
-- `authenticated: false`: rerun `/auth/slack/start` or confirm `data/slack/tokens.json` exists with a valid token.
+- `authenticated: false`: rerun `/auth/slack/start`, or double-check `SLACK_USER_TOKEN`/related env vars or `data/slack/tokens.json`.
 - `missing_scope` errors: verify the user token includes every scope above.
 
 Security notes

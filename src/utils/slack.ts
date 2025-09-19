@@ -8,7 +8,7 @@ const SLACK_OAUTH_URL = 'https://slack.com/oauth/v2/authorize';
 const SLACK_TOKEN_URL = 'https://slack.com/api/oauth.v2.access';
 
 export interface SlackAuthedUser {
-  id: string;
+  id?: string;
   scope?: string;
   access_token?: string;
   refresh_token?: string;
@@ -26,6 +26,8 @@ export interface SlackTokenSet {
   installed_at: number;
 }
 
+const ENV_INSTALLED_AT = Date.now();
+
 function tokensPath(config: AppConfig) {
   const dir = path.resolve(config.DATA_DIR, 'slack');
   return { dir, file: path.join(dir, 'tokens.json') };
@@ -36,6 +38,9 @@ async function ensureDir(p: string) {
 }
 
 export async function loadSlackTokens(config: AppConfig): Promise<SlackTokenSet | null> {
+  const envTokens = getSlackTokensFromEnv(config);
+  if (envTokens) return envTokens;
+
   const { file } = tokensPath(config);
   try {
     const content = await fs.readFile(file, 'utf8');
@@ -43,6 +48,35 @@ export async function loadSlackTokens(config: AppConfig): Promise<SlackTokenSet 
   } catch {
     return null;
   }
+}
+
+function getSlackTokensFromEnv(config: AppConfig): SlackTokenSet | null {
+  const userToken = config.SLACK_USER_TOKEN;
+  if (!userToken) return null;
+
+  const authedUser: SlackAuthedUser = {
+    id: config.SLACK_USER_ID || undefined,
+    scope: config.SLACK_USER_SCOPE || undefined,
+    access_token: userToken,
+    refresh_token: config.SLACK_USER_REFRESH_TOKEN || undefined,
+    token_type: 'user',
+  };
+
+  if (config.SLACK_USER_TOKEN_EXPIRES_AT) {
+    authedUser.expires_at = config.SLACK_USER_TOKEN_EXPIRES_AT;
+  }
+
+  const tokens: SlackTokenSet = {
+    access_token: config.SLACK_BOT_TOKEN || undefined,
+    scope: config.SLACK_USER_SCOPE || undefined,
+    team: (config.SLACK_TEAM_ID || config.SLACK_TEAM_NAME)
+      ? { id: config.SLACK_TEAM_ID || undefined, name: config.SLACK_TEAM_NAME || undefined }
+      : undefined,
+    authed_user: authedUser,
+    installed_at: ENV_INSTALLED_AT,
+  };
+
+  return tokens;
 }
 
 export async function saveSlackTokens(config: AppConfig, tokens: SlackTokenSet) {
