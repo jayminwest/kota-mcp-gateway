@@ -25,6 +25,31 @@ Expose stored webhook deliveries (WHOOP, iOS Shortcuts, etc.) to MCP clients. Ea
 - **Result:** `{ date, total, events: [{ index, receivedAt, source, eventType, dedupeKey, metadata, payloadPreview, payload? }] }`.
 - `payload` is only returned when `include_payload` is `true`; otherwise a truncated JSON preview is provided.
 
+### `webhooks_search`
+- **Purpose:** Search webhook payloads and metadata for a text fragment across the archive.
+- **Args:**
+  - `query` (required text)
+  - `limit` (default 20, max 50)
+  - `source`, `event_types`, `start_date`, `end_date` filters
+  - `include_payload` / `payload_preview_length`
+- **Result:** `{ query, total, events: [...] }` filtered by the search criteria.
+
+### `webhooks_get_by_type`
+- **Purpose:** Pull the most recent events of a specific type (e.g., `sleep`, `activity`) across the last `N` days.
+- **Args:**
+  - `event_type` (required)
+  - `days` (default 7, max 90)
+  - `limit` (default 50, max 100)
+  - `source`, `include_payload`, `payload_preview_length`
+- **Result:** `{ eventType, events: [...] }` ordered newest first.
+
+### `webhooks_aggregate`
+- **Purpose:** Summarize webhook activity by day or ISO week.
+- **Args:**
+  - `window` (`"daily"` | `"weekly"`, default daily)
+  - Optional `start_date`, `end_date`, `source`, `event_types`
+- **Result:** `{ window, buckets: [{ key, startDate, endDate, totalEvents, sources, eventTypes, firstEventAt, lastEventAt }] }`.
+
 ## Usage Notes
 
 - Start with `webhooks_list_dates` to discover available days, then call `webhooks_get_events` for a specific date.
@@ -32,3 +57,4 @@ Expose stored webhook deliveries (WHOOP, iOS Shortcuts, etc.) to MCP clients. Ea
 - For WHOOP deliveries, the `source` is `whoop` with `eventType` values like `sleep`, `recovery`, or `workout`.
 - iOS Shortcuts deliveries appear under `source: "ios"` with event types matching the endpoint (`note`, `activity`, `food`).
 - Raw files remain on the server; the handler is read-only and does not modify the stored JSON.
+- Incoming events are normalized automatically: duplicate deliveries (based on dedupe key + archive) are skipped, entry times are reduced to `HH:mm`, and time-of-day tags (`morning`/`afternoon`/`evening`/`night`) are appended. Standardized templates (`activity_event`, `nutrition_event`, `context_event`) are written to entry metadata for downstream analysis.

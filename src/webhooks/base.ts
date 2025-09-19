@@ -6,6 +6,7 @@ import type { AppConfig } from '../utils/config.js';
 import type { WebhookSourceConfig } from '../utils/webhook-config.js';
 import { WebhookEventLogger } from '../utils/webhook-events.js';
 import { WebhookDeduper } from '../utils/webhook-dedupe.js';
+import { WebhookStore } from '../utils/webhook-store.js';
 
 export interface WebhookContext {
   req: Request;
@@ -43,6 +44,7 @@ export abstract class BaseWebhook {
   private readonly eventLogger: WebhookEventLogger;
   private readonly deduper: WebhookDeduper;
   private readonly debug: boolean;
+  private readonly archive: WebhookStore;
 
   constructor(opts: {
     logger: Logger;
@@ -60,6 +62,7 @@ export abstract class BaseWebhook {
     this.eventLogger = opts.eventLogger;
     this.deduper = opts.deduper;
     this.debug = Boolean(opts.debug);
+    this.archive = new WebhookStore(opts.config.DATA_DIR, this.logger.child({ component: 'webhook-archive' }));
   }
 
   abstract readonly source: string;
@@ -120,17 +123,27 @@ export abstract class BaseWebhook {
           if (!result) continue;
           const dedupeKey = result.dedupeKey ?? options.extractEventId?.(ctx.payload, ctx.req) ?? result.eventId;
           if (dedupeKey && this.deduper.has(`${this.source}:${dedupeKey}`)) {
-            this.logger.info({ source: this.source, eventType: options.eventType, dedupeKey }, 'Duplicate webhook event ignored');
+            this.logger.info({ source: this.source, eventType: options.eventType, dedupeKey }, 'Duplicate webhook event ignored (memory cache)');
+            continue;
+          }
+
+          const eventDate = result.date ?? this.deriveDateFromResult(result) ?? new Date().toISOString().slice(0, 10);
+          const enrichment = this.applyEntryEnrichment(result, eventDate, options.eventType);
+
+          if (dedupeKey && eventDate && (await this.archive.hasEvent(eventDate, dedupeKey, this.source, options.eventType))) {
+            this.logger.info({ source: this.source, eventType: options.eventType, dedupeKey, eventDate }, 'Duplicate webhook event ignored (archive)');
             continue;
           }
 
           await this.eventLogger.record(this.source, options.eventType, ctx.payload, dedupeKey, {
             path,
             method,
+            eventDate,
+            timeOfDay: enrichment.primaryTimeOfDay,
           });
 
           if (!result.skipStore) {
-            await this.persistToDaily(result, dedupeKey, options.eventType);
+            await this.persistToDaily(result, dedupeKey, options.eventType, enrichment);
           }
           processed = true;
         }
@@ -198,7 +211,12 @@ export abstract class BaseWebhook {
     }
   }
 
-  private async persistToDaily(result: WebhookProcessResult, dedupeKey: string | undefined, eventType: string): Promise<void> {
+  private async persistToDaily(
+    result: WebhookProcessResult,
+    dedupeKey: string | undefined,
+    eventType: string,
+    enrichment: EntryEnrichment
+  ): Promise<void> {
     if (!result.date) {
       throw new Error('Webhook result missing date');
     }
@@ -213,6 +231,7 @@ export abstract class BaseWebhook {
       webhook_source: this.source,
       webhook_event_type: eventType,
       ...(dedupeKey ? { webhook_dedupe_key: dedupeKey } : {}),
+      ...(enrichment.primaryTimeOfDay ? { webhook_time_of_day: enrichment.primaryTimeOfDay } : {}),
     };
 
     await this.store.appendEntries({
@@ -226,4 +245,159 @@ export abstract class BaseWebhook {
       metadata,
     });
   }
+
+  private applyEntryEnrichment(result: WebhookProcessResult, date: string, eventType: string): EntryEnrichment {
+    const entries = result.entries ?? [];
+    let primaryTimeOfDay: string | undefined;
+    const tagSet = new Set<string>();
+
+    result.entries = entries.map(entry => {
+      const normalized: DailyEntry = {
+        ...entry,
+        tags: entry.tags ? [...entry.tags] : undefined,
+        metadata: entry.metadata ? { ...entry.metadata } : undefined,
+      };
+
+      const enrichment = this.normalizeEntryTime(date, normalized.time, normalized.metadata);
+      if (enrichment.time) normalized.time = enrichment.time;
+      if (enrichment.isoTime) {
+        normalized.metadata = { ...(normalized.metadata ?? {}), normalized_time_iso: enrichment.isoTime };
+      }
+      if (enrichment.timeOfDay) {
+        normalized.metadata = { ...(normalized.metadata ?? {}), time_of_day: enrichment.timeOfDay };
+        if (!primaryTimeOfDay) primaryTimeOfDay = enrichment.timeOfDay;
+        tagSet.add(enrichment.timeOfDay);
+      }
+
+      const template = this.buildTemplate(normalized, eventType);
+      if (template) {
+        normalized.metadata = {
+          ...(normalized.metadata ?? {}),
+          template_type: template.type,
+          template: template.payload,
+        };
+      }
+
+      if (normalized.tags) {
+        normalized.tags = Array.from(new Set(normalized.tags.map(tag => tag.trim()).filter(Boolean)));
+      }
+      if (enrichment.timeOfDay) {
+        normalized.tags = Array.from(new Set([...(normalized.tags ?? []), enrichment.timeOfDay]));
+      }
+
+      return normalized;
+    });
+
+    return {
+      primaryTimeOfDay,
+      tags: Array.from(tagSet),
+    };
+  }
+
+  private normalizeEntryTime(
+    date: string,
+    rawTime: string | undefined,
+    metadata?: Record<string, unknown>
+  ): { time?: string; isoTime?: string; timeOfDay?: string } {
+    if (!rawTime) return {};
+    const trimmed = rawTime.trim();
+    const candidates = [trimmed];
+    if (!trimmed.includes('T')) {
+      if (/^\d{1,2}:\d{2}(?::\d{2})?\s*(am|pm)?$/i.test(trimmed)) {
+        candidates.push(`${date} ${trimmed}`);
+        candidates.push(`${date}T${trimmed}`);
+      } else {
+        candidates.push(`${date}T${trimmed}`);
+      }
+    }
+
+    let parsed: Date | undefined;
+    for (const candidate of candidates) {
+      const d = new Date(candidate);
+      if (!Number.isNaN(d.getTime())) {
+        parsed = d;
+        break;
+      }
+    }
+
+    if (!parsed) {
+      if (metadata) metadata.original_time = trimmed;
+      return { time: trimmed };
+    }
+
+    const iso = parsed.toISOString();
+    const hours = parsed.getUTCHours();
+    const minutes = parsed.getUTCMinutes();
+    const normalizedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    const timeOfDay = this.resolveTimeOfDay(hours);
+    return { time: normalizedTime, isoTime: iso, timeOfDay };
+  }
+
+  private resolveTimeOfDay(hour: number): string {
+    if (hour >= 5 && hour < 12) return 'morning';
+    if (hour >= 12 && hour < 17) return 'afternoon';
+    if (hour >= 17 && hour < 21) return 'evening';
+    return 'night';
+  }
+
+  private buildTemplate(
+    entry: DailyEntry,
+    eventType: string
+  ): { type: string; payload: Record<string, unknown> } | undefined {
+    const category = (entry.category ?? '').toLowerCase();
+    if (['activity', 'training', 'workout'].includes(category)) {
+      return {
+        type: 'activity_event',
+        payload: {
+          type: category,
+          duration_minutes: entry.duration_minutes,
+          intensity: entry.metrics?.strain ?? entry.metrics?.heart_rate_avg,
+          location: entry.metadata?.location,
+          metrics: entry.metrics,
+        },
+      };
+    }
+    if (['food', 'drink', 'supplement', 'snack'].includes(category)) {
+      return {
+        type: 'nutrition_event',
+        payload: {
+          meal_type: entry.meal ?? category,
+          items: entry.metadata?.items ?? [{ name: entry.name, quantity: entry.quantity }].filter(Boolean),
+          macros: entry.macros,
+          time: entry.time,
+          photo_url: entry.metadata?.photo_url,
+        },
+      };
+    }
+    if (['note', 'context'].includes(category) || eventType === 'context') {
+      return {
+        type: 'context_event',
+        payload: {
+          location: entry.metadata?.location,
+          weather: entry.metadata?.weather,
+          movement_type: entry.metadata?.movement_type,
+          battery_percent: entry.metadata?.battery_percent,
+          calendar_next: entry.metadata?.calendar_next,
+        },
+      };
+    }
+    return undefined;
+  }
+
+  private deriveDateFromResult(result: WebhookProcessResult): string | undefined {
+    if (result.date) return result.date;
+    const firstEntry = result.entries?.[0];
+    if (firstEntry?.time) {
+      const parsed = new Date(firstEntry.time);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString().slice(0, 10);
+      }
+    }
+    return undefined;
+  }
+}
+
+interface EntryEnrichment {
+  primaryTimeOfDay?: string;
+  tags: string[];
 }
