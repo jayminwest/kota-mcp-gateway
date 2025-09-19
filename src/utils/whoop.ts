@@ -119,6 +119,16 @@ export async function refreshWhoopToken(config: AppConfig, refresh_token: string
   return tokens;
 }
 
+async function forceRefreshAccessToken(config: AppConfig): Promise<string> {
+  const current = await loadWhoopTokens(config);
+  const refreshToken = current?.refresh_token;
+  if (!refreshToken) {
+    throw new Error('WHOOP refresh token missing. Re-authenticate to grant offline access.');
+  }
+  const refreshed = await refreshWhoopToken(config, refreshToken);
+  return refreshed.access_token;
+}
+
 async function ensureAccessToken(config: AppConfig): Promise<string> {
   // If raw API key is provided, use it
   if (config.WHOOP_API_KEY) return config.WHOOP_API_KEY;
@@ -141,11 +151,6 @@ async function ensureAccessToken(config: AppConfig): Promise<string> {
 export class WhoopClient {
   constructor(private config: AppConfig) {}
 
-  private async authHeader() {
-    const token = await ensureAccessToken(this.config);
-    return { 'Authorization': `Bearer ${token}` };
-  }
-
   async request(path: string, query?: Record<string, any>, init?: RequestInit): Promise<any> {
     const qs = new URLSearchParams();
     if (query) {
@@ -155,12 +160,30 @@ export class WhoopClient {
       }
     }
     const u = `${BASE_URL}${path}${qs.toString() ? `?${qs}` : ''}`;
-    const headers = {
-      'Accept': 'application/json',
-      ...(await this.authHeader()),
-      ...(init?.headers || {}),
-    } as any;
-    const res = await fetch(u, { method: init?.method || 'GET', headers, ...init } as any);
+
+    const doFetch = async (token: string) => {
+      const headers = {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...(init?.headers || {}),
+      } as any;
+      return fetch(u, { method: init?.method || 'GET', headers, ...init } as any);
+    };
+
+    let token = await ensureAccessToken(this.config);
+    let res = await doFetch(token);
+
+    if (res.status === 401) {
+      try {
+        token = await forceRefreshAccessToken(this.config);
+        res = await doFetch(token);
+      } catch (err) {
+        // include original 401 text for easier debugging
+        const txt = await res.text().catch(() => '');
+        throw new Error(`WHOOP 401 Unauthorized: ${txt || (err as Error).message}`);
+      }
+    }
+
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
       throw new Error(`WHOOP ${res.status} ${res.statusText}: ${txt}`);
