@@ -9,6 +9,7 @@ Features
 - Health endpoint at `/health`
 - Structured JSON logging with correlation IDs
 - Dockerized with persistent data volume
+- Webhook event storage with MCP tooling for historical review
 
 Project Structure
 - `src/index.ts` – main server and MCP transport

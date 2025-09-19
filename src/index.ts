@@ -20,6 +20,7 @@ import { StripeHandler } from './handlers/stripe.js';
 import { MemoryHandler } from './handlers/memory.js';
 import { DailyHandler } from './handlers/daily.js';
 import { WorkspaceHandler } from './handlers/workspace.js';
+import { WebhooksHandler } from './handlers/webhooks.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -307,6 +308,7 @@ async function main() {
     make(MemoryHandler),
     make(DailyHandler),
     make(WorkspaceHandler),
+    make(WebhooksHandler),
   ];
 
   for (const handler of handlers) {

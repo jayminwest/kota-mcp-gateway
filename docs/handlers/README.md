@@ -11,6 +11,7 @@ Handlers Index
 - Rize (GraphQL API): RIZE.md
 - Daily Logs: DAILY.md (nutrition/vitals aliases)
 - KOTA Memory System: MEMORY.md
+- Webhooks: WEBHOOKS.md
 - Workspace Navigator: WORKSPACE.md
 - Adding New Handlers: ADDING_HANDLERS.md
 
