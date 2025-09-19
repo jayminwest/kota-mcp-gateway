@@ -58,6 +58,7 @@ export function getWhoopAuthUrl(config: AppConfig, state?: string) {
     access_type: 'offline',
     prompt: 'consent',
     scope: [
+      'offline_access',
       'read:profile',
       'read:body_measurement',
       'read:recovery',
@@ -105,6 +106,9 @@ export async function exchangeWhoopCode(config: AppConfig, code: string): Promis
   const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: getWhoopRedirectUri(config) });
   const tokens = await tokenRequestWithFallback(config, body);
   if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
+  if (!tokens.refresh_token) {
+    throw new Error('WHOOP did not return a refresh_token. Ensure offline access is enabled for your app and try authenticating again.');
+  }
   await saveWhoopTokens(config, tokens);
   return tokens;
 }

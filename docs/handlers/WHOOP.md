@@ -34,7 +34,7 @@ OAuth flow (recommended)
 - Set `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `.env` (and optionally `WHOOP_REDIRECT_URI`).
 - Start auth in a browser: `http://localhost:8084/auth/whoop/start`
   - You’ll be prompted to consent. The gateway requests the scopes:
-    `read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles`
+    `offline_access read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles`
 - After redirect back to the gateway, tokens are stored at `./data/whoop/tokens.json`.
 - Verify auth: `curl http://localhost:8084/auth/whoop/status`
   - Response includes `{ authenticated, profile, token_type, expiry_date, scope }`
