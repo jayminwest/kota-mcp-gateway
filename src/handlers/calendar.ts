@@ -26,6 +26,10 @@ const UpdateEventSchema = z.object({
   description: z.string().optional(),
 }).strip();
 
+const DeleteEventSchema = z.object({
+  id: z.string(),
+}).strip();
+
 export class CalendarHandler extends BaseHandler {
   readonly prefix = 'calendar';
 
@@ -62,6 +66,13 @@ export class CalendarHandler extends BaseHandler {
           description: UpdateEventSchema.shape.description,
         },
       },
+      {
+        action: 'delete_event',
+        description: 'Delete a calendar event by ID',
+        inputSchema: {
+          id: DeleteEventSchema.shape.id,
+        },
+      },
     ];
   }
 
@@ -78,6 +89,8 @@ export class CalendarHandler extends BaseHandler {
         return this.createEvent(calendar, args);
       case 'update_event':
         return this.updateEvent(calendar, args);
+      case 'delete_event':
+        return this.deleteEvent(calendar, args);
       default:
         return { content: [{ type: 'text', text: `Unknown action: ${action}` }], isError: true };
     }
@@ -124,5 +137,12 @@ export class CalendarHandler extends BaseHandler {
     if (end) patch.end = { dateTime: new Date(end).toISOString() };
     const res = await calendar.events.patch({ calendarId: 'primary', eventId: id, requestBody: patch });
     return { content: [{ type: 'text', text: `Updated event id=${res.data.id}` }] };
+  }
+
+  private async deleteEvent(calendar: any, args: unknown): Promise<CallToolResult> {
+    const { id } = this.parseArgs(DeleteEventSchema, args);
+    if (!id) return { content: [{ type: 'text', text: 'Missing id' }], isError: true };
+    await calendar.events.delete({ calendarId: 'primary', eventId: id });
+    return { content: [{ type: 'text', text: `Deleted event id=${id}` }] };
   }
 }

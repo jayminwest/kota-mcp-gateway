@@ -102,9 +102,18 @@ export async function getUserContributions(token: string, args: ContributionsArg
   return data;
 }
 
-export async function searchMentions(token: string, login: string, fromDate: string, toDate: string, first = 20) {
+export async function searchMentions(
+  token: string,
+  login: string,
+  fromDate: string,
+  toDate: string,
+  first = 20,
+  repos?: string[],
+) {
   const range = `${fromDate}..${toDate}`; // YYYY-MM-DD..YYYY-MM-DD
-  const query = `mentions:${login} updated:${range}`;
+  const qualifiers = [`mentions:${login}`, `updated:${range}`];
+  if (repos && repos.length) qualifiers.push(...repos.map((repo) => `repo:${repo}`));
+  const query = qualifiers.join(' ');
   const data = await ghGraphQL<any>(token, `
     query($query: String!, $first: Int!) {
       search(query: $query, type: ISSUE, first: $first) {
@@ -168,4 +177,3 @@ export function assertGitHubToken(config: AppConfig): string {
   if (!token) throw new Error('Missing GITHUB_TOKEN in environment');
   return token;
 }
-

@@ -8,6 +8,7 @@ export abstract class BaseHandler {
   protected config: HandlerConfig;
 
   abstract readonly prefix: string;
+  readonly aliases: string[] = [];
 
   constructor(opts: { logger: Logger; config: HandlerConfig }) {
     this.logger = opts.logger;

@@ -5,6 +5,7 @@ Unified Model Context Protocol (MCP) gateway that consolidates KOTA tools behind
 Features
 - Single connection point for MCP clients
 - Dynamic tool registration via handlers
+- Webhook ingestion pipeline that maps external events into daily vitals
 - Health endpoint at `/health`
 - Structured JSON logging with correlation IDs
 - Dockerized with persistent data volume
@@ -13,10 +14,12 @@ Project Structure
 - `src/index.ts` – main server and MCP transport
 - `src/handlers/*` – service handlers (Gmail, Calendar, Whoop, Kraken, Rize, Kasa, Slack)
   - Also: GitHub (activity summaries)
+- `src/webhooks/*` – webhook handlers that append to the daily tracker
 - `src/utils/*` – config and logger
 - `src/middleware/*` – error and optional auth middleware
-- `scripts/*` – healthcheck and macOS launchd installer
+- `scripts/*` – healthcheck, webhook testing, and macOS launchd installer
 - `data/` – persistent data for tokens/config
+- `docs/handlers` & `docs/webhooks` – per-integration guides
 
 Setup
 1. Copy `.env.example` to `.env` and fill any required keys.
