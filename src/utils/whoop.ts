@@ -227,6 +227,7 @@ export class WhoopClient {
   // By-ID and cycle subresources
   getSleepById(sleepId: string) { return this.request(`/v2/activity/sleep/${encodeURIComponent(sleepId)}`); }
   getWorkoutById(workoutId: string) { return this.request(`/v2/activity/workout/${encodeURIComponent(workoutId)}`); }
+  getRecoveryById(recoveryId: string) { return this.request(`/v2/recovery/${encodeURIComponent(recoveryId)}`); }
   getCycleById(cycleId: number) { return this.request(`/v2/cycle/${cycleId}`); }
   getCycleRecovery(cycleId: number) { return this.request(`/v2/cycle/${cycleId}/recovery`); }
   getCycleSleep(cycleId: number) { return this.request(`/v2/cycle/${cycleId}/sleep`); }

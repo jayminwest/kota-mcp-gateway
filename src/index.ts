@@ -27,6 +27,7 @@ import { KrakenClient } from './utils/kraken.js';
 import { generateSlackState, getSlackAuthUrl, exchangeSlackCode, getSlackStatus, loadSlackTokens } from './utils/slack.js';
 import { WebhookManager } from './webhooks/manager.js';
 import { loadWebhookConfig } from './utils/webhook-config.js';
+import { AttentionConfigService, AttentionPipeline, CodexClassificationAgent, DispatchManager, SlackDispatchTransport } from './attention/index.js';
 
 function asyncHandler<
   T extends (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
@@ -51,7 +52,27 @@ async function main() {
   app.use(optionalAuthMiddleware(config.MCP_AUTH_TOKEN));
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
-  const webhookManager = new WebhookManager({ app, config, logger, webhookConfig });
+
+  const attentionConfigService = new AttentionConfigService({ dataDir: config.DATA_DIR, logger });
+  await attentionConfigService.ensureDefaults();
+  const attentionConfig = await attentionConfigService.load();
+  const attentionDispatch = new DispatchManager({ logger });
+  if (attentionConfig.dispatchTargets?.slack?.channelId) {
+    const slackTransport = new SlackDispatchTransport({
+      logger,
+      appConfig: config,
+      attentionConfig,
+    });
+    attentionDispatch.registerTransport('slack', slackTransport.send.bind(slackTransport));
+  }
+  const attentionPipeline = new AttentionPipeline({
+    logger,
+    config: attentionConfig,
+    classifier: new CodexClassificationAgent({ logger, config: attentionConfig }),
+    dispatch: attentionDispatch,
+  });
+
+  const webhookManager = new WebhookManager({ app, config, logger, webhookConfig, attentionPipeline });
   webhookManager.register();
 
   // Health endpoint

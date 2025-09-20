@@ -9,12 +9,14 @@ import { WhoopWebhook } from './whoop.js';
 import { CalendarWebhook } from './calendar.js';
 import { IOSWebhook } from './ios.js';
 import type { BaseWebhook } from './base.js';
+import type { AttentionPipeline } from '../attention/index.js';
 
 interface WebhookManagerOptions {
   app: express.Application;
   config: AppConfig;
   logger: Logger;
   webhookConfig: WebhookConfig;
+  attentionPipeline?: AttentionPipeline;
 }
 
 export class WebhookManager {
@@ -22,12 +24,14 @@ export class WebhookManager {
   private readonly config: AppConfig;
   private readonly logger: Logger;
   private readonly webhookConfig: WebhookConfig;
+  private readonly attentionPipeline?: AttentionPipeline;
 
   constructor(opts: WebhookManagerOptions) {
     this.app = opts.app;
     this.config = opts.config;
     this.logger = opts.logger;
     this.webhookConfig = opts.webhookConfig;
+    this.attentionPipeline = opts.attentionPipeline;
   }
 
   register(): void {
@@ -47,6 +51,7 @@ export class WebhookManager {
             eventLogger,
             deduper: new WebhookDeduper(),
             debug: this.webhookConfig.debug,
+            attentionPipeline: this.attentionPipeline,
           }),
       },
       {
@@ -60,6 +65,7 @@ export class WebhookManager {
             eventLogger,
             deduper: new WebhookDeduper(),
             debug: this.webhookConfig.debug,
+            attentionPipeline: this.attentionPipeline,
           }),
       },
       {
@@ -73,6 +79,7 @@ export class WebhookManager {
             eventLogger,
             deduper: new WebhookDeduper(),
             debug: this.webhookConfig.debug,
+            attentionPipeline: this.attentionPipeline,
           }),
       },
     ];

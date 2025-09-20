@@ -7,6 +7,7 @@ import type { WebhookSourceConfig } from '../utils/webhook-config.js';
 import { WebhookEventLogger } from '../utils/webhook-events.js';
 import { WebhookDeduper } from '../utils/webhook-dedupe.js';
 import { WebhookStore } from '../utils/webhook-store.js';
+import type { AttentionPipeline, RawAttentionEvent } from '../attention/index.js';
 
 export interface WebhookContext {
   req: Request;
@@ -45,6 +46,7 @@ export abstract class BaseWebhook {
   private readonly deduper: WebhookDeduper;
   private readonly debug: boolean;
   private readonly archive: WebhookStore;
+  private readonly attentionPipeline?: AttentionPipeline;
 
   constructor(opts: {
     logger: Logger;
@@ -54,6 +56,7 @@ export abstract class BaseWebhook {
     eventLogger: WebhookEventLogger;
     deduper: WebhookDeduper;
     debug?: boolean;
+    attentionPipeline?: AttentionPipeline;
   }) {
     this.logger = opts.logger;
     this.config = opts.config;
@@ -63,6 +66,7 @@ export abstract class BaseWebhook {
     this.deduper = opts.deduper;
     this.debug = Boolean(opts.debug);
     this.archive = new WebhookStore(opts.config.DATA_DIR, this.logger.child({ component: 'webhook-archive' }));
+    this.attentionPipeline = opts.attentionPipeline;
   }
 
   abstract readonly source: string;
@@ -142,6 +146,24 @@ export abstract class BaseWebhook {
             timeOfDay: enrichment.primaryTimeOfDay,
           });
 
+          if (this.attentionPipeline) {
+            await this.runAttentionPipeline({
+              source: this.source,
+              kind: options.eventType,
+              payload: ctx.payload,
+              dedupeKey,
+              receivedAt: new Date().toISOString(),
+              correlationId: (req as any).id ?? req.header('x-request-id') ?? undefined,
+              metadata: {
+                path,
+                method,
+                eventDate,
+                enrichment,
+                webhookMetadata: result.metadata,
+              },
+            });
+          }
+
           if (!result.skipStore) {
             await this.persistToDaily(result, dedupeKey, options.eventType, enrichment);
           }
@@ -163,6 +185,26 @@ export abstract class BaseWebhook {
     };
 
     (router as any)[method](path, wrapped);
+  }
+
+  private async runAttentionPipeline(event: RawAttentionEvent): Promise<void> {
+    if (!this.attentionPipeline) {
+      return;
+    }
+    try {
+      const outcome = await this.attentionPipeline.process(event);
+      this.logger.debug(
+        {
+          source: event.source,
+          kind: event.kind,
+          outcome: outcome.outcome,
+          score: outcome.classification.urgencyScore,
+        },
+        'Attention pipeline processed webhook event',
+      );
+    } catch (err) {
+      this.logger.error({ err, source: event.source, kind: event.kind }, 'Attention pipeline processing failed');
+    }
   }
 
   private verifySignature(ctx: WebhookContext, eventType: string): void {
