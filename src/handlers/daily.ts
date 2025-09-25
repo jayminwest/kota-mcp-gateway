@@ -4,6 +4,7 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec, HandlerConfig } from '../types/index.js';
 import type { Logger } from '../utils/logger.js';
 import { DailyStore } from '../utils/daily.js';
+import type { DailyTemplateLog } from '../utils/daily.js';
 
 const NonEmptyString = z.string().trim().min(1);
 
@@ -81,6 +82,54 @@ const EntrySchema = z
   })
   .strip();
 
+const TemplateChecklistSchema = z
+  .object({
+    morning_supplements: z.boolean().optional(),
+    coffee_cups: z.number().int().min(0).optional(),
+    substances: z.union([z.number().min(0), NonEmptyString]).optional(),
+    kendama_session: z.boolean().optional(),
+  })
+  .strip();
+
+const TemplateSummarySchema = z
+  .object({
+    supplements: NonEmptyString.optional(),
+    coffee: z.number().int().min(0).optional(),
+    substances: z.union([z.number().min(0), NonEmptyString]).optional(),
+    kendama: NonEmptyString.optional(),
+  })
+  .strip();
+
+const TemplateMealSchema = z
+  .object({
+    slot: NonEmptyString.describe('Meal slot name such as breakfast, lunch, dinner'),
+    description: NonEmptyString.describe('Short description of what was eaten'),
+    time: NonEmptyString.optional(),
+    notes: NonEmptyString.optional(),
+  })
+  .strip();
+
+const TemplateSchema = z
+  .object({
+    checklist: TemplateChecklistSchema.optional(),
+    summary: TemplateSummarySchema.optional(),
+    exceptions: z.array(NonEmptyString).optional(),
+    meals: z.array(TemplateMealSchema).optional(),
+    notes: z.array(NonEmptyString).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
+  })
+  .strip()
+  .refine(
+    value =>
+      Boolean(value.checklist && Object.keys(value.checklist).length) ||
+      Boolean(value.summary && Object.keys(value.summary).length) ||
+      Boolean(value.exceptions && value.exceptions.length) ||
+      Boolean(value.meals && value.meals.length) ||
+      Boolean(value.notes && value.notes.length) ||
+      Boolean(value.metadata && Object.keys(value.metadata).length),
+    { message: 'Provide at least one template field' }
+  );
+
 const BaseDaySchema = z
   .object({
     date: z.string().date().describe('ISO date (YYYY-MM-DD) representing this log'),
@@ -89,22 +138,56 @@ const BaseDaySchema = z
     notes: NotesField.optional(),
     rawText: NonEmptyString.optional(),
     metadata: z.record(z.string(), z.any()).optional(),
+    template: TemplateSchema.optional(),
   })
   .strip();
 
+const EntriesSchema = z.array(EntrySchema).min(1);
+const OptionalEntriesSchema = EntriesSchema.optional();
+
 const LogDaySchema = BaseDaySchema.extend({
-  entries: z.array(EntrySchema).min(1),
+  entries: OptionalEntriesSchema,
   totals: TotalsSchema.optional(),
-});
+})
+  .refine(data => Boolean(data.template) || Boolean(data.entries && data.entries.length), {
+    message: 'Provide entries or a template payload',
+    path: ['template'],
+  });
 
 const AppendSchema = BaseDaySchema.extend({
-  entries: z.array(EntrySchema).min(1),
+  entries: OptionalEntriesSchema,
   totals: TotalsSchema.optional(),
-});
+})
+  .refine(data => Boolean(data.template) || Boolean(data.entries && data.entries.length), {
+    message: 'Provide entries or a template payload',
+    path: ['template'],
+  });
+
+const LogDayInputShape: z.ZodRawShape = {
+  ...BaseDaySchema.shape,
+  entries: OptionalEntriesSchema,
+  totals: TotalsSchema.optional(),
+};
+
+const AppendInputShape: z.ZodRawShape = {
+  ...BaseDaySchema.shape,
+  entries: OptionalEntriesSchema,
+  totals: TotalsSchema.optional(),
+};
 
 const DateOnlySchema = z.object({
   date: z.string().date().describe('ISO date (YYYY-MM-DD) to target'),
 });
+
+const TemplateRequestSchema = z
+  .object({
+    date: z.string().date().optional().describe('Optional ISO date to seed the template'),
+    includeExamples: z
+      .boolean()
+      .optional()
+      .describe('Include example strings in template fields to guide filling'),
+  })
+  .strip();
 
 function normaliseNotes(input?: unknown): string[] | undefined {
   if (!input) return undefined;
@@ -117,7 +200,7 @@ function normaliseNotes(input?: unknown): string[] | undefined {
 
 export class DailyHandler extends BaseHandler {
   readonly prefix = 'daily';
-  readonly aliases = ['vitals', 'nutrition'];
+  readonly aliases: string[] = [];
   private store: DailyStore;
 
   constructor(opts: { logger: Logger; config: HandlerConfig }) {
@@ -128,28 +211,33 @@ export class DailyHandler extends BaseHandler {
   getTools(): ToolSpec[] {
     return [
       {
+        action: 'get_template',
+        description: 'Retrieve the standard daily template skeleton for a date',
+        inputSchema: TemplateRequestSchema.shape,
+      },
+      {
         action: 'log_day',
-        description: 'Store a complete structured daily log for a given date (overwrites any existing log)',
-        inputSchema: LogDaySchema.shape,
+        description: 'Overwrite the structured daily log for a date',
+        inputSchema: LogDayInputShape,
       },
       {
         action: 'append_entries',
-        description: 'Append one or more daily entries to a date, creating the day if it does not exist',
-        inputSchema: AppendSchema.shape,
+        description: 'Append entries to a day, creating it when missing',
+        inputSchema: AppendInputShape,
       },
       {
         action: 'get_day',
-        description: 'Retrieve the stored daily log for a specific date',
+        description: 'Get the stored daily log for a date',
         inputSchema: DateOnlySchema.shape,
       },
       {
         action: 'list_days',
-        description: 'List stored daily log dates with counts and timestamps',
+        description: 'List stored daily log dates with counts',
         inputSchema: {},
       },
       {
         action: 'delete_day',
-        description: 'Remove a stored daily log for a date',
+        description: 'Delete a stored daily log for a date',
         inputSchema: DateOnlySchema.shape,
       },
     ];
@@ -158,6 +246,8 @@ export class DailyHandler extends BaseHandler {
   async execute(action: string, args: unknown): Promise<CallToolResult> {
     try {
       switch (action) {
+        case 'get_template':
+          return await this.handleGetTemplate(args);
         case 'log_day':
           return await this.handleLogDay(args);
         case 'append_entries':
@@ -178,6 +268,81 @@ export class DailyHandler extends BaseHandler {
     }
   }
 
+  private async handleGetTemplate(raw: unknown): Promise<CallToolResult> {
+    const parsed = this.parseArgs(TemplateRequestSchema, raw);
+    const date = parsed.date ?? new Date().toISOString().slice(0, 10);
+    const includeExamples = parsed.includeExamples ?? false;
+    const template = this.buildTemplateSkeleton(includeExamples);
+    const guidance = this.buildTemplateGuidance();
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ date, template, guidance }),
+        },
+      ],
+    };
+  }
+
+  private buildTemplateSkeleton(includeExamples: boolean): DailyTemplateLog {
+    const checklist = {
+      morning_supplements: true,
+      coffee_cups: 2,
+      substances: 6,
+      kendama_session: true,
+    } as const;
+
+    const summary = {
+      supplements: includeExamples ? 'standard' : 'standard',
+      coffee: 2,
+      substances: 6,
+      kendama: includeExamples ? '90min session' : 'session length (e.g., 90min)',
+    } as const;
+
+    const meals = [
+      {
+        slot: 'lunch',
+        description: includeExamples ? 'Chipotle bowl' : 'Describe lunch (name only)',
+      },
+      {
+        slot: 'dinner',
+        description: includeExamples ? 'Rice and chicken' : 'Describe dinner (name only)',
+      },
+      {
+        slot: 'late',
+        description: includeExamples ? 'Greek yogurt' : 'Optional late meal/snack name',
+      },
+    ];
+
+    const exceptions = includeExamples ? ['Skipped Rhodiola today'] : [];
+    const notes = includeExamples ? ['Felt good, new GoPro arrived'] : [];
+
+    const template: DailyTemplateLog = {
+      checklist,
+      summary,
+      exceptions,
+      meals,
+      notes,
+    };
+
+    return template;
+  }
+
+  private buildTemplateGuidance(): Record<string, unknown> {
+    return {
+      usage: 'Confirm the daily constants, only record deviations in exceptions, and keep meals as short names.',
+      checklist: {
+        morning_supplements: 'true if the usual morning stack was taken; use exceptions to note skips',
+        coffee_cups: 'Number of cups consumed unless it deviates from the default',
+        substances: 'Count or description of nicotine/other pouches (rename as needed)',
+        kendama_session: 'true if a kendama session happened, otherwise log the reason in exceptions',
+      },
+      exceptions: 'Short bullet strings describing anything that changed (e.g., Skipped Rhodiola, Extra coffee).',
+      meals: 'Only provide the meal name—no macros unless explicitly relevant.',
+      notes: 'Capture vibe, wins, or context that will matter later.',
+    };
+  }
+
   private async handleLogDay(raw: unknown): Promise<CallToolResult> {
     const parsed = this.parseArgs(LogDaySchema, raw);
     const notes = normaliseNotes(parsed.notes);
@@ -190,6 +355,7 @@ export class DailyHandler extends BaseHandler {
       totals: parsed.totals,
       rawText: parsed.rawText,
       metadata: parsed.metadata,
+      template: parsed.template,
     });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
@@ -206,6 +372,7 @@ export class DailyHandler extends BaseHandler {
       totals: parsed.totals,
       rawText: parsed.rawText,
       metadata: parsed.metadata,
+      template: parsed.template,
     });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }

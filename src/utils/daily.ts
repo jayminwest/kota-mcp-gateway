@@ -49,6 +49,38 @@ export interface DailyActivityMetrics {
   sets?: number;
 }
 
+export interface DailyMealEntry {
+  slot: string;
+  description: string;
+  time?: string;
+  notes?: string;
+}
+
+export interface DailyTemplateChecklist {
+  morning_supplements?: boolean;
+  coffee_cups?: number;
+  substances?: number | string;
+  kendama_session?: boolean;
+  [key: string]: boolean | number | string | undefined;
+}
+
+export interface DailyTemplateSummary {
+  supplements?: string;
+  coffee?: number;
+  substances?: number | string;
+  kendama?: string;
+  [key: string]: boolean | number | string | undefined;
+}
+
+export interface DailyTemplateLog {
+  checklist?: DailyTemplateChecklist;
+  summary?: DailyTemplateSummary;
+  exceptions?: string[];
+  meals?: DailyMealEntry[];
+  notes?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface DailyEntry {
   name: string;
   category?: DailyEntryCategory;
@@ -72,10 +104,11 @@ export interface DailyDayBase {
   timezone?: string;
   summary?: string;
   notes?: string[];
-  entries: DailyEntry[];
+  entries?: DailyEntry[];
   totals?: DailyTotals;
   rawText?: string;
   metadata?: Record<string, unknown>;
+  template?: DailyTemplateLog;
 }
 
 export interface DailyDayRecord extends DailyDayBase {
@@ -100,11 +133,163 @@ const VERSION = 1;
 const STORAGE_DIR = 'kota_daily';
 const LEGACY_STORAGE_DIR = 'kota_nutrition';
 
-function normalizeNotes(input?: string | string[]): string[] | undefined {
+function normalizeStringArray(input?: unknown): string[] | undefined {
+  if (input === undefined || input === null) return undefined;
+  const values = Array.isArray(input) ? input : [input];
+  const flattened: string[] = [];
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      const nested = normalizeStringArray(value);
+      if (nested) flattened.push(...nested);
+      continue;
+    }
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) flattened.push(trimmed);
+  }
+  if (flattened.length === 0) return undefined;
+  return Array.from(new Set(flattened));
+}
+
+function normalizeNotes(input?: unknown): string[] | undefined {
+  return normalizeStringArray(input);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function normalizeTemplate(input?: DailyTemplateLog): DailyTemplateLog | undefined {
   if (!input) return undefined;
-  const arr = Array.isArray(input) ? input : [input];
-  const cleaned = arr.map(note => note.trim()).filter(Boolean);
-  return cleaned.length > 0 ? cleaned : undefined;
+
+  const checklist = input.checklist
+    ? Object.entries(input.checklist).reduce<DailyTemplateChecklist>((acc, [rawKey, rawValue]) => {
+        const trimmedKey = typeof rawKey === 'string' ? rawKey.trim() : '';
+        if (!trimmedKey) return acc;
+        const key =
+          trimmedKey === 'zyn_pouches' || trimmedKey === 'zyn'
+            ? 'substances'
+            : trimmedKey;
+        if (rawValue === undefined || rawValue === null) return acc;
+        if (typeof rawValue === 'string') {
+          const trimmedValue = rawValue.trim();
+          if (trimmedValue) acc[key] = trimmedValue;
+        } else if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+          acc[key] = rawValue;
+        }
+        return acc;
+      }, {})
+    : undefined;
+
+  const summary = input.summary
+    ? Object.entries(input.summary).reduce<DailyTemplateSummary>((acc, [rawKey, rawValue]) => {
+        const trimmedKey = typeof rawKey === 'string' ? rawKey.trim() : '';
+        if (!trimmedKey) return acc;
+        const key =
+          trimmedKey === 'zyn_pouches' || trimmedKey === 'zyn'
+            ? 'substances'
+            : trimmedKey;
+        if (rawValue === undefined || rawValue === null) return acc;
+        if (typeof rawValue === 'string') {
+          const trimmedValue = rawValue.trim();
+          if (trimmedValue) acc[key] = trimmedValue;
+        } else if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+          acc[key] = rawValue;
+        }
+        return acc;
+      }, {})
+    : undefined;
+
+  const meals = Array.isArray(input.meals)
+    ? input.meals
+        .map(meal => {
+          if (!meal) return undefined;
+          const slot = typeof meal.slot === 'string' ? meal.slot.trim() : '';
+          const description = typeof meal.description === 'string' ? meal.description.trim() : '';
+          if (!slot || !description) return undefined;
+          const normalized: DailyMealEntry = { slot, description };
+          if (typeof meal.time === 'string') {
+            const time = meal.time.trim();
+            if (time) normalized.time = time;
+          }
+          if (typeof meal.notes === 'string') {
+            const notes = meal.notes.trim();
+            if (notes) normalized.notes = notes;
+          }
+          return normalized;
+        })
+        .filter((meal): meal is DailyMealEntry => Boolean(meal))
+    : undefined;
+
+  const exceptions = normalizeStringArray(input.exceptions);
+  const notes = normalizeNotes(input.notes);
+  const metadata = input.metadata && isPlainObject(input.metadata) ? { ...input.metadata } : undefined;
+
+  if (
+    (!checklist || Object.keys(checklist).length === 0) &&
+    (!summary || Object.keys(summary).length === 0) &&
+    (!exceptions || exceptions.length === 0) &&
+    (!notes || notes.length === 0) &&
+    (!meals || meals.length === 0) &&
+    !metadata
+  ) {
+    return undefined;
+  }
+
+  return {
+    checklist,
+    summary,
+    exceptions,
+    meals,
+    notes,
+    metadata,
+  };
+}
+
+function mergeTemplates(
+  current?: DailyTemplateLog,
+  incoming?: DailyTemplateLog
+): DailyTemplateLog | undefined {
+  const base = normalizeTemplate(current);
+  const next = normalizeTemplate(incoming);
+  if (!base) return next;
+  if (!next) return base;
+
+  const checklist = {
+    ...(base.checklist ?? {}),
+    ...(next.checklist ?? {}),
+  };
+
+  const summary = {
+    ...(base.summary ?? {}),
+    ...(next.summary ?? {}),
+  };
+
+  const exceptions = normalizeStringArray([base.exceptions ?? [], next.exceptions ?? []]);
+  const notes = normalizeNotes([base.notes ?? [], next.notes ?? []]);
+
+  const meals = (() => {
+    const existingMeals = base.meals ?? [];
+    const incomingMeals = next.meals ?? [];
+    if (!existingMeals.length && !incomingMeals.length) return undefined;
+    return [...existingMeals, ...incomingMeals];
+  })();
+
+  const metadata = {
+    ...(base.metadata ?? {}),
+    ...(next.metadata ?? {}),
+  };
+
+  return normalizeTemplate({
+    checklist,
+    summary,
+    exceptions,
+    notes,
+    meals,
+    metadata,
+  });
 }
 
 function normalizeEntry(entry: DailyEntry): DailyEntry {
@@ -186,10 +371,11 @@ export class DailyStore {
       timezone: input.timezone,
       summary: input.summary,
       notes: normalizeNotes(input.notes),
-      entries: input.entries.map(normalizeEntry),
+      entries: (input.entries ?? []).map(normalizeEntry),
       totals: input.totals,
       rawText: input.rawText,
       metadata: input.metadata,
+      template: normalizeTemplate(input.template),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -212,10 +398,11 @@ export class DailyStore {
         timezone: input.timezone,
         summary: input.summary,
         notes: normalizeNotes(input.notes),
-        entries: input.entries.map(normalizeEntry),
+        entries: (input.entries ?? []).map(normalizeEntry),
         totals: input.totals,
         rawText: input.rawText,
         metadata: input.metadata,
+        template: normalizeTemplate(input.template),
         createdAt: now,
         updatedAt: now,
       };
@@ -227,20 +414,19 @@ export class DailyStore {
       return record;
     }
 
-    const mergedNotes = [
-      ...(existing.notes ?? []),
-      ...(normalizeNotes(input.notes) ?? []),
-    ];
-    const notes = mergedNotes.length > 0 ? mergedNotes : undefined;
+    const notes = normalizeNotes([existing.notes ?? [], input.notes ?? []]);
+    const newEntries = (input.entries ?? []).map(normalizeEntry);
+    const combinedEntries = [...(existing.entries ?? []), ...newEntries];
     const record: DailyDayRecord = {
       ...existing,
       timezone: input.timezone ?? existing.timezone,
       summary: input.summary ?? existing.summary,
       notes,
-      entries: [...existing.entries, ...input.entries.map(normalizeEntry)],
+      entries: combinedEntries,
       totals: input.totals ?? existing.totals,
       rawText: input.rawText ?? existing.rawText,
       metadata: { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) },
+      template: mergeTemplates(existing.template, input.template),
       updatedAt: now,
     };
     data.days[key] = record;
@@ -260,7 +446,7 @@ export class DailyStore {
     const data = await this.readFile();
     const items: DailyListItem[] = Object.values(data.days).map(day => ({
       date: day.date,
-      entryCount: day.entries.length,
+      entryCount: day.entries?.length ?? 0,
       updatedAt: day.updatedAt,
       summary: day.summary,
     }));
