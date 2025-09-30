@@ -4,6 +4,7 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec, HandlerConfig } from '../types/index.js';
 import type { Logger } from '../utils/logger.js';
 import { KotaMemoryStore, type MemoryCategory, formatList } from '../utils/memory.js';
+import { pacificNowIso } from '../utils/time.js';
 
 const CategoryEnum = z.enum(['preferences', 'connections', 'patterns', 'shortcuts', 'state']);
 
@@ -203,7 +204,7 @@ export class MemoryHandler extends BaseHandler {
     const parsed = this.parseArgs(ConversationNotesSchema, raw);
     const payload = {
       ...parsed,
-      savedAt: new Date().toISOString(),
+      savedAt: pacificNowIso(),
     };
     const result = await this.store.set('conversation_notes', payload, 'state');
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };

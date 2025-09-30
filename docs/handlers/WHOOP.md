@@ -1,5 +1,7 @@
 WHOOP Setup and Usage
 
+> Bundle: `whoop` (auto-enabled). Run `toolkit_list_bundles {}` early if you need a quick reminder of available integrations.
+
 This guide explains how to enable WHOOP tools in the KOTA MCP Gateway and what they do.
 
 What you get

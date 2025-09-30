@@ -1,5 +1,7 @@
 Kasa (TP-Link) Setup and Usage
 
+> Bundle: `kasa` (auto-enabled). Call `toolkit_list_bundles {}` to see it alongside other device integrations.
+
 Approach
 - Uses Kasa Cloud API (unofficial) via https://wap.tplinkcloud.com to list and control devices.
 - Stores a session token under `./data/kasa/tokens.json` and reuses it across runs.

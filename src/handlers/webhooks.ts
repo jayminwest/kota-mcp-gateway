@@ -4,6 +4,7 @@ import { BaseHandler } from './base.js';
 import type { HandlerConfig, ToolSpec } from '../types/index.js';
 import type { Logger } from '../utils/logger.js';
 import { WebhookStore } from '../utils/webhook-store.js';
+import { toPacificDate } from '../utils/time.js';
 
 const ListDatesSchema = z
   .object({
@@ -61,7 +62,7 @@ const AggregateSchema = z
   .strip();
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toPacificDate(new Date());
 }
 
 export class WebhooksHandler extends BaseHandler {

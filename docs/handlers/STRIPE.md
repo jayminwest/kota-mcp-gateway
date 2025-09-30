@@ -1,5 +1,7 @@
 Stripe Handler
 
+> Bundle: `stripe` (auto-enabled). Finance bundles appear in `toolkit_list_bundles {}` for quick reference.
+
 Overview
 Provides a high-level summary of account activity over a time window: payments, refunds, payouts, disputes, customers, and subscriptions. Designed for quick overviews across all projects within one Stripe account.
 
@@ -31,4 +33,3 @@ Notes
 - Uses Charges, Refunds, Payouts, Disputes, Customers, Subscriptions APIs; amounts are aggregated by currency.
 - Subscription product names are expanded where possible to compute top products.
 - For detailed exports or reconciliation, consider using Stripe balance transactions or Stripe Sigma.
-

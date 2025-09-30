@@ -1,5 +1,7 @@
 Rize GraphQL Setup and Usage
 
+> Bundle: `rize` (auto-enabled). Scan `toolkit_list_bundles {}` to recall productivity integrations.
+
 Endpoint
 - GraphQL endpoint: `https://api.rize.io/api/v1/graphql`
 

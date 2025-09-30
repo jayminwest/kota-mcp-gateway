@@ -1,5 +1,7 @@
 # Webhooks Handler
 
+> Bundle: `webhooks` (auto-enabled). `toolkit_list_bundles {}` highlights it alongside other integrations.
+
 Expose stored webhook deliveries (WHOOP, iOS Shortcuts, etc.) to MCP clients. Each incoming delivery is persisted under `data/webhooks/events/<YYYY>/<MM>/<DD>-events.json`; the handler provides read-only tools to inspect those files without streaming massive payloads into the LLM context.
 
 ## Tools

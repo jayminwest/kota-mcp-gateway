@@ -3,16 +3,21 @@ KOTA MCP Gateway Handlers
 This directory documents handler-specific setup and usage. Start here if you’re bringing a new machine online or enabling a new service.
 
 Handlers Index
+- Toolkit Bundles: TOOLKIT.md (enable optional handlers)
 - Google (Gmail + Calendar): GOOGLE.md
-- GitHub: GITHUB.md
-- Stripe: STRIPE.md
-- WHOOP (v2 API): WHOOP.md
-- Kraken (Crypto): KRAKEN.md
-- Rize (GraphQL API): RIZE.md
-- Daily Logs: DAILY.md (nutrition/vitals aliases)
 - KOTA Memory System: MEMORY.md
-- Webhooks: WEBHOOKS.md
-- Workspace Navigator: WORKSPACE.md
+- Daily Logs: DAILY.md
+- Content Calendar: CONTENT_CALENDAR.md
+- GitHub: GITHUB.md (enable via bundle `github`)
+- Stripe: STRIPE.md (enable via bundle `stripe`)
+- Spotify: SPOTIFY.md (enable via bundle `spotify`)
+- WHOOP (v2 API): WHOOP.md (enable via bundle `whoop`)
+- Kraken (Crypto): KRAKEN.md (enable via bundle `kraken`)
+- Rize (GraphQL API): RIZE.md (enable via bundle `rize`)
+- Slack: SLACK.md (enable via bundle `slack`)
+- Kasa: KASA.md (enable via bundle `kasa`)
+- Webhooks: WEBHOOKS.md (enable via bundle `webhooks`)
+- Workspace Navigator: WORKSPACE.md (enable via bundle `workspace`)
 - Adding New Handlers: ADDING_HANDLERS.md
 
 Common Concepts

@@ -1,5 +1,7 @@
 Workspace Handler
 
+> Enable via `toolkit_enable_bundle { "bundle": "workspace" }` before using these tools.
+
 Overview
 Provides a structured overview of the configured `DATA_DIR` (default `data`). The default call returns a lightweight digest (counts, hotspots, recent activity); switch to explore/detailed modes for full trees and metadata when needed.
 

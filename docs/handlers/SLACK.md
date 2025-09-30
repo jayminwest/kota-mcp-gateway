@@ -1,6 +1,8 @@
 Slack Handler Setup
 ===================
 
+> Bundle: `slack` (auto-enabled). `toolkit_list_bundles {}` will confirm messaging integrations are ready before you start planning actions.
+
 This guide walks you through configuring the Slack handler so the gateway can read conversations (channels, private groups, DMs) available to your user.
 
 What you get

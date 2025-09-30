@@ -8,6 +8,14 @@ import { WebhookEventLogger } from '../utils/webhook-events.js';
 import { WebhookDeduper } from '../utils/webhook-dedupe.js';
 import { WebhookStore } from '../utils/webhook-store.js';
 import type { AttentionPipeline, RawAttentionEvent } from '../attention/index.js';
+import { PACIFIC_TIME_ZONE, pacificNowIso, toPacificDate, toPacificIso } from '../utils/time.js';
+
+const pacificHourFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: PACIFIC_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
 
 export interface WebhookContext {
   req: Request;
@@ -131,7 +139,7 @@ export abstract class BaseWebhook {
             continue;
           }
 
-          const eventDate = result.date ?? this.deriveDateFromResult(result) ?? new Date().toISOString().slice(0, 10);
+          const eventDate = result.date ?? this.deriveDateFromResult(result) ?? toPacificDate(new Date());
           const enrichment = this.applyEntryEnrichment(result, eventDate, options.eventType);
 
           if (dedupeKey && eventDate && (await this.archive.hasEvent(eventDate, dedupeKey, this.source, options.eventType))) {
@@ -152,7 +160,7 @@ export abstract class BaseWebhook {
               kind: options.eventType,
               payload: ctx.payload,
               dedupeKey,
-              receivedAt: new Date().toISOString(),
+              receivedAt: pacificNowIso(),
               correlationId: (req as any).id ?? req.header('x-request-id') ?? undefined,
               metadata: {
                 path,
@@ -367,11 +375,13 @@ export abstract class BaseWebhook {
       return { time: trimmed };
     }
 
-    const iso = parsed.toISOString();
-    const hours = parsed.getUTCHours();
-    const minutes = parsed.getUTCMinutes();
-    const normalizedTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-    const timeOfDay = this.resolveTimeOfDay(hours);
+    const iso = toPacificIso(parsed);
+    const parts = pacificHourFormatter.formatToParts(parsed);
+    const hourStr = parts.find(part => part.type === 'hour')?.value ?? '00';
+    const minuteStr = parts.find(part => part.type === 'minute')?.value ?? '00';
+    const normalizedTime = `${hourStr.padStart(2, '0')}:${minuteStr.padStart(2, '0')}`;
+    const hourNum = Number.parseInt(hourStr, 10);
+    const timeOfDay = this.resolveTimeOfDay(Number.isNaN(hourNum) ? 0 : hourNum);
     return { time: normalizedTime, isoTime: iso, timeOfDay };
   }
 
@@ -432,7 +442,7 @@ export abstract class BaseWebhook {
     if (firstEntry?.time) {
       const parsed = new Date(firstEntry.time);
       if (!Number.isNaN(parsed.getTime())) {
-        return parsed.toISOString().slice(0, 10);
+        return toPacificDate(parsed);
       }
     }
     return undefined;

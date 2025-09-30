@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { assertStripeKey, cents, getAccountStatus, getChargesSummary, getCustomersCount, getDisputesSummary, getPayoutsSummary, getRefundsSummary, getSubscriptionsSummary, toUnixRange } from '../utils/stripe.js';
+import { toPacificDate } from '../utils/time.js';
 
 const DetailEnum = z.enum(['numbers', 'full']);
 
@@ -56,8 +57,8 @@ export class StripeHandler extends BaseHandler {
       getSubscriptionsSummary(key, range, account, cap),
     ]);
 
-    const fromDate = new Date(range.from * 1000).toISOString().slice(0, 10);
-    const toDate = new Date(range.to * 1000).toISOString().slice(0, 10);
+    const fromDate = toPacificDate(range.from * 1000);
+    const toDate = toPacificDate(range.to * 1000);
 
     const lines: string[] = [];
     lines.push(`Stripe activity (${fromDate} → ${toDate})${parsed.currency ? ` [${parsed.currency}]` : ''}`);

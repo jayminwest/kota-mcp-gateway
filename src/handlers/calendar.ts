@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { getCalendar } from '../utils/google.js';
+import { ensurePacificIso } from '../utils/time.js';
 
 const ListEventsSchema = z.object({
   start: z.string().describe('ISO start time').optional(),
@@ -100,6 +101,16 @@ export class CalendarHandler extends BaseHandler {
     return `Gmail/Calendar not authenticated. Open http://localhost:${this.config.PORT}/auth/google/start to authorize.`;
   }
 
+  private formatEventBoundary(boundary: any): string {
+    if (boundary?.dateTime) {
+      return ensurePacificIso(boundary.dateTime) ?? boundary.dateTime;
+    }
+    if (boundary?.date) {
+      return `${boundary.date} (all-day)`;
+    }
+    return '(no time)';
+  }
+
   private async listEvents(calendar: any, args: unknown): Promise<CallToolResult> {
     const parsed = this.parseArgs(ListEventsSchema, args);
     const start = parsed.start ? new Date(parsed.start) : new Date();
@@ -110,7 +121,11 @@ export class CalendarHandler extends BaseHandler {
     });
     const items = res.data.items || [];
     if (items.length === 0) return { content: [{ type: 'text', text: 'No events found.' }] };
-    const out = items.map((e: any) => `- ${e.start?.dateTime || e.start?.date} → ${e.end?.dateTime || e.end?.date} | ${e.summary || '(no title)'} | id=${e.id}`);
+    const out = items.map((e: any) => {
+      const startStr = this.formatEventBoundary(e.start);
+      const endStr = this.formatEventBoundary(e.end);
+      return `- ${startStr} → ${endStr} | ${e.summary || '(no title)'} | id=${e.id}`;
+    });
     return { content: [{ type: 'text', text: out.join('\n') }] };
   }
 

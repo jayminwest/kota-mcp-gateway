@@ -1,5 +1,7 @@
 GitHub Handler
 
+> Bundle: `github` (auto-enabled). Run `toolkit_list_bundles {}` to keep engineering resources top of mind.
+
 Overview
 Summarizes your GitHub activity over a time window using the GraphQL API. Focuses on counts and titles for PRs/issues, plus mention activity. Commit counts are included; commit messages are not listed.
 

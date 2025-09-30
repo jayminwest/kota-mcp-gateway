@@ -1,5 +1,6 @@
 import type { Router } from 'express';
 import { BaseWebhook, type WebhookContext, type WebhookProcessResult } from './base.js';
+import { toPacificDate } from '../utils/time.js';
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -23,7 +24,7 @@ function parsePayload(ctx: WebhookContext): ManualPayload {
 }
 
 function resolveDate(payload: ManualPayload): string {
-  const value = payload.date ?? new Date().toISOString().slice(0, 10);
+  const value = payload.date ?? toPacificDate(new Date());
   if (!ISO_DATE_REGEX.test(value)) {
     throw new Error('Date must be in YYYY-MM-DD format');
   }
@@ -126,4 +127,3 @@ export class IOSWebhook extends BaseWebhook {
     };
   }
 }
-

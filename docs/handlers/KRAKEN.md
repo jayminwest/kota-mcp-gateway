@@ -1,5 +1,7 @@
 Kraken Setup and Usage
 
+> Bundle: `kraken` (auto-enabled). Use `toolkit_list_bundles {}` for a quick refresh of finance-related tools.
+
 What you get
 - Tools:
   - `kraken_get_ticker` — Public ticker data for a pair (e.g., `XBTUSD`)

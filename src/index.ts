@@ -19,12 +19,18 @@ import { GitHubHandler } from './handlers/github.js';
 import { StripeHandler } from './handlers/stripe.js';
 import { MemoryHandler } from './handlers/memory.js';
 import { DailyHandler } from './handlers/daily.js';
+import { ContentCalendarHandler } from './handlers/content-calendar.js';
+import { ToolkitHandler } from './handlers/toolkit.js';
 import { WorkspaceHandler } from './handlers/workspace.js';
 import { WebhooksHandler } from './handlers/webhooks.js';
+import { SpotifyHandler } from './handlers/spotify.js';
+import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
+import type { BaseHandler } from './handlers/base.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
 import { generateSlackState, getSlackAuthUrl, exchangeSlackCode, getSlackStatus, loadSlackTokens } from './utils/slack.js';
+import { generateSpotifyState, getSpotifyAuthUrl, exchangeSpotifyCode, loadSpotifyTokens } from './utils/spotify.js';
 import { WebhookManager } from './webhooks/manager.js';
 import { loadWebhookConfig } from './utils/webhook-config.js';
 import { AttentionConfigService, AttentionPipeline, CodexClassificationAgent, DispatchManager, SlackDispatchTransport } from './attention/index.js';
@@ -35,6 +41,94 @@ function asyncHandler<
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
+}
+
+interface BundleDefinition {
+  key: string;
+  description: string;
+  factory: () => BaseHandler;
+  autoEnable?: boolean;
+  tags?: string[];
+}
+
+class BundleRegistry {
+  private readonly definitions = new Map<string, BundleDefinition>();
+  private readonly order: string[] = [];
+  private readonly enabled = new Map<string, { handler: BaseHandler; tools: string[] }>();
+
+  constructor(private readonly opts: { logger: typeof logger; mcp: McpServer }) {}
+
+  addBundle(def: BundleDefinition): void {
+    if (this.definitions.has(def.key)) {
+      throw new Error(`Bundle already registered: ${def.key}`);
+    }
+    this.definitions.set(def.key, def);
+    this.order.push(def.key);
+    if (def.autoEnable) {
+      this.enableBundle(def.key);
+    }
+  }
+
+  enableBundle(key: string): EnableBundleResult {
+    const def = this.definitions.get(key);
+    if (!def) {
+      throw new Error(`Unknown bundle: ${key}`);
+    }
+    const existing = this.enabled.get(key);
+    if (existing) {
+      return {
+        bundle: key,
+        enabled: true,
+        alreadyEnabled: true,
+        registeredTools: existing.tools,
+      };
+    }
+    const handler = def.factory();
+    const tools = this.registerHandler(key, handler);
+    this.enabled.set(key, { handler, tools });
+    return {
+      bundle: key,
+      enabled: true,
+      alreadyEnabled: false,
+      registeredTools: tools,
+    };
+  }
+
+  listBundles(): ToolkitBundleInfo[] {
+    return this.order.map(key => {
+      const def = this.definitions.get(key)!;
+      return {
+        key,
+        description: def.description,
+        enabled: this.enabled.has(key),
+        autoEnabled: Boolean(def.autoEnable),
+        tags: def.tags,
+      };
+    });
+  }
+
+  private registerHandler(bundleKey: string, handler: BaseHandler): string[] {
+    const registered: string[] = [];
+    const prefixes = [handler.prefix, ...(handler.aliases ?? [])];
+    const uniquePrefixes = Array.from(new Set(prefixes));
+    for (const spec of handler.getTools()) {
+      for (const prefix of uniquePrefixes) {
+        const name = `${prefix}_${spec.action}`;
+        this.opts.mcp.registerTool(name, {
+          description: spec.description,
+          inputSchema: spec.inputSchema,
+          outputSchema: spec.outputSchema,
+        }, async (args: any, extra) => {
+          const res = await handler.execute(spec.action, args ?? {});
+          this.opts.logger.debug({ tool: name, args, sessionId: extra?.sessionId }, 'Tool executed');
+          return res;
+        });
+        this.opts.logger.info({ tool: name, prefix, bundle: bundleKey }, 'Tool registered');
+        registered.push(name);
+      }
+    }
+    return registered;
+  }
 }
 
 async function main() {
@@ -219,6 +313,53 @@ async function main() {
     });
   }));
 
+  // Spotify OAuth endpoints
+  app.get('/auth/spotify/start', asyncHandler(async (_req, res) => {
+    const state = generateSpotifyState();
+    const url = getSpotifyAuthUrl(config, state);
+    res.setHeader('Set-Cookie', `spotify_state=${state}; Path=/; HttpOnly; SameSite=Lax`);
+    res.redirect(302, url);
+  }));
+  app.get('/auth/spotify/callback', asyncHandler(async (req, res) => {
+    const error = (req.query.error as string) || '';
+    if (error) {
+      const description = (req.query.error_description as string) || '';
+      res.status(400).send(`Spotify authorization failed: ${error}${description ? ` - ${description}` : ''}`);
+      return;
+    }
+    const code = (req.query.code as string) || '';
+    if (!code) {
+      res.status(400).send('Missing code');
+      return;
+    }
+    try {
+      const state = (req.query.state as string) || '';
+      const cookie = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('spotify_state='));
+      const stored = cookie ? cookie.split('=')[1] : '';
+      if (stored && state && stored !== state) {
+        res.status(400).send('Invalid state');
+        return;
+      }
+    } catch {}
+    await exchangeSpotifyCode(config, code);
+    res.send('Spotify authentication successful. You can close this window.');
+  }));
+  app.get('/auth/spotify/status', asyncHandler(async (_req, res) => {
+    const tokens = await loadSpotifyTokens(config);
+    if (!tokens?.access_token) {
+      res.json({ authenticated: false });
+      return;
+    }
+    res.json({
+      authenticated: true,
+      scope: tokens.scope,
+      expiry_date: tokens.expiry_date,
+      has_refresh_token: Boolean(tokens.refresh_token || config.SPOTIFY_REFRESH_TOKEN),
+      token_source: tokens.source || 'file',
+      has_client: Boolean(config.SPOTIFY_CLIENT_ID && config.SPOTIFY_CLIENT_SECRET),
+    });
+  }));
+
   // Kraken status: report env presence and auth check
   app.get('/auth/kraken/status', asyncHandler(async (_req, res) => {
     const hasKey = Boolean(config.KRAKEN_API_KEY);
@@ -305,6 +446,7 @@ async function main() {
       '- Rize handler exposes curated queries like rize_current_user, rize_recent_projects, rize_recent_tasks, and rize_time_entries.',
       '- WHOOP v2 endpoints are paginated. Use limit/start/end and control page size via max_pages/max_items.',
       '- Google: authorize via /auth/google/start; WHOOP: /auth/whoop/start; status routes available under /auth/*/status.',
+      '- Bundles load automatically; call toolkit_list_bundles for a quick inventory when planning tool usage.',
     ].join('\n')
   });
 
@@ -314,42 +456,132 @@ async function main() {
     enableJsonResponse: true,
   });
 
-  // Register handlers and their tools
-  const make = (HandlerCtor: any) => new HandlerCtor({ logger, config });
-  const handlers = [
-    make(GmailHandler),
-    make(CalendarHandler),
-    make(WhoopHandler),
-    make(KasaHandler),
-    make(KrakenHandler),
-    make(RizeHandler),
-    make(SlackHandler),
-    make(GitHubHandler),
-    make(StripeHandler),
-    make(MemoryHandler),
-    make(DailyHandler),
-    make(WorkspaceHandler),
-    make(WebhooksHandler),
+  const registry = new BundleRegistry({ logger, mcp });
+  const make = (HandlerCtor: any, extra: Record<string, unknown> = {}) => () =>
+    new HandlerCtor({ logger, config, ...extra });
+
+  const toolkitApi: ToolkitApi = {
+    listBundles: () => registry.listBundles(),
+    enableBundle: (bundle: string) => registry.enableBundle(bundle),
+  };
+
+  const bundleDefinitions: BundleDefinition[] = [
+    {
+      key: 'toolkit',
+      description: 'Enable optional handler bundles',
+      autoEnable: true,
+      factory: make(ToolkitHandler, { toolkit: toolkitApi }),
+      tags: ['core'],
+    },
+    {
+      key: 'gmail',
+      description: 'Gmail message, draft, and send actions',
+      autoEnable: true,
+      factory: make(GmailHandler),
+      tags: ['core', 'google'],
+    },
+    {
+      key: 'calendar',
+      description: 'Google Calendar event helpers',
+      autoEnable: true,
+      factory: make(CalendarHandler),
+      tags: ['core', 'google'],
+    },
+    {
+      key: 'memory',
+      description: 'Persistent memory storage and retrieval',
+      autoEnable: true,
+      factory: make(MemoryHandler),
+      tags: ['core'],
+    },
+    {
+      key: 'daily',
+      description: 'Holistic daily logging tools',
+      autoEnable: true,
+      factory: make(DailyHandler),
+      tags: ['core', 'health'],
+    },
+    {
+      key: 'content_calendar',
+      description: 'Editorial and campaign planning tools',
+      autoEnable: true,
+      factory: make(ContentCalendarHandler),
+      tags: ['core', 'planning'],
+    },
+    {
+      key: 'whoop',
+      description: 'WHOOP v2 recovery, sleep, and workout data',
+      autoEnable: true,
+      factory: make(WhoopHandler),
+      tags: ['optional', 'health'],
+    },
+    {
+      key: 'kasa',
+      description: 'TP-Link Kasa smart device controls',
+      autoEnable: true,
+      factory: make(KasaHandler),
+      tags: ['optional', 'iot'],
+    },
+    {
+      key: 'kraken',
+      description: 'Kraken crypto tickers and balances',
+      autoEnable: true,
+      factory: make(KrakenHandler),
+      tags: ['optional', 'finance'],
+    },
+    {
+      key: 'rize',
+      description: 'Rize project, task, and time entries',
+      autoEnable: true,
+      factory: make(RizeHandler),
+      tags: ['optional', 'productivity'],
+    },
+    {
+      key: 'slack',
+      description: 'Slack channel discovery and messaging',
+      autoEnable: true,
+      factory: make(SlackHandler),
+      tags: ['optional', 'communication'],
+    },
+    {
+      key: 'spotify',
+      description: 'Spotify playback and library insights',
+      autoEnable: true,
+      factory: make(SpotifyHandler),
+      tags: ['optional', 'media'],
+    },
+    {
+      key: 'github',
+      description: 'GitHub activity summaries',
+      autoEnable: true,
+      factory: make(GitHubHandler),
+      tags: ['optional', 'engineering'],
+    },
+    {
+      key: 'stripe',
+      description: 'Stripe account activity summaries',
+      autoEnable: true,
+      factory: make(StripeHandler),
+      tags: ['optional', 'finance'],
+    },
+    {
+      key: 'workspace',
+      description: 'Workspace map and knowledge explorer',
+      autoEnable: true,
+      factory: make(WorkspaceHandler),
+      tags: ['optional', 'knowledge'],
+    },
+    {
+      key: 'webhooks',
+      description: 'Webhook inspection and aggregation tools',
+      autoEnable: true,
+      factory: make(WebhooksHandler),
+      tags: ['optional', 'integration'],
+    },
   ];
 
-  for (const handler of handlers) {
-    const prefixes = [handler.prefix, ...(handler.aliases ?? [])];
-    const uniquePrefixes = Array.from(new Set(prefixes));
-    for (const spec of handler.getTools()) {
-      for (const prefix of uniquePrefixes) {
-        const name = `${prefix}_${spec.action}`;
-        mcp.registerTool(name, {
-          description: spec.description,
-          inputSchema: spec.inputSchema,
-          outputSchema: spec.outputSchema,
-        }, async (args: any, extra) => {
-          const res = await handler.execute(spec.action, args ?? {});
-          logger.debug({ tool: name, args, sessionId: extra?.sessionId }, 'Tool executed');
-          return res;
-        });
-        logger.info({ tool: name, prefix }, 'Tool registered');
-      }
-    }
+  for (const def of bundleDefinitions) {
+    registry.addBundle(def);
   }
 
   // Help resources (read-only)
@@ -381,6 +613,7 @@ async function main() {
       '- help://github/usage',
       '- help://daily/usage (aliases: help://nutrition/usage, help://vitals/usage)',
       '- help://memory/usage',
+      '- help://spotify/usage',
       '- help://workspace/usage',
     ].join('\n')
   );
@@ -540,6 +773,29 @@ async function main() {
   );
 
   registerHelpResource(
+    'spotify_help_usage',
+    'help://spotify/usage',
+    [
+      'Spotify Help',
+      '',
+      'Auth:',
+      '- /auth/spotify/start → connect account (requires SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET).',
+      '- /auth/spotify/status → token scope and expiry info.',
+      '',
+      'Tools:',
+      '- spotify_get_current {}',
+      '- spotify_recent_tracks { limit?, after?, before? }',
+      '- spotify_top_items { type?, time_range?, limit?, offset? }',
+      '- spotify_search { query, type?, limit?, offset?, market? }',
+      '- spotify_audio_features { track_ids }',
+      '',
+      'Notes:',
+      '- recent_tracks.after/before accept epoch ms or ISO timestamps.',
+      '- audio_features.track_ids accepts arrays or comma-separated lists (max 100).',
+    ].join('\n')
+  );
+
+  registerHelpResource(
     'stripe_help_usage',
     'help://stripe/usage',
     [
@@ -619,6 +875,15 @@ async function main() {
     messages: [
       { role: 'assistant', content: { type: 'text', text: 'stripe_activity_summary { "detail": "numbers" }' } },
       { role: 'assistant', content: { type: 'text', text: 'stripe_activity_summary { "start": "2025-09-01", "end": "2025-09-15", "detail": "full" }' } },
+    ],
+  }));
+
+  mcp.prompt('spotify.examples', 'Examples for Spotify tools', async () => ({
+    description: 'Spotify quick examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'spotify_get_current {}' } },
+      { role: 'assistant', content: { type: 'text', text: 'spotify_recent_tracks { "limit": 10 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'spotify_top_items { "type": "tracks", "time_range": "long_term", "limit": 5 }' } },
     ],
   }));
 

@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { getSlackUserToken, slackApi, loadSlackTokens } from '../utils/slack.js';
+import { ensurePacificIso, toPacificIso } from '../utils/time.js';
 
 const ConversationType = z.enum(['public_channel', 'private_channel', 'im', 'mpim']);
 
@@ -89,7 +90,8 @@ export class SlackHandler extends BaseHandler {
       is_im: c.is_im,
       is_mpim: c.is_mpim,
       is_archived: c.is_archived,
-      created: c.created,
+      created: c.created ? this.formatUnixTimestamp(c.created) : undefined,
+      created_unix: c.created,
       num_members: c.num_members,
     }));
     const result = {
@@ -121,8 +123,14 @@ export class SlackHandler extends BaseHandler {
         messages = messages.filter((m: any) => m.user === selfId);
       }
     }
+    const normalizedMessages = messages.map((message: any) => ({
+      ...message,
+      ts_pacific: this.formatSlackTimestamp(message.ts),
+      thread_ts_pacific: this.formatSlackTimestamp(message.thread_ts),
+      edited_at_pacific: this.formatSlackTimestamp(message.edited?.ts),
+    }));
     const result = {
-      messages,
+      messages: normalizedMessages,
       next_cursor: data.response_metadata?.next_cursor || null,
       has_more: data.has_more || false,
     };
@@ -136,5 +144,26 @@ export class SlackHandler extends BaseHandler {
     const date = new Date(trimmed);
     if (Number.isNaN(date.getTime())) return undefined;
     return (date.getTime() / 1000).toFixed(6);
+  }
+
+  private formatSlackTimestamp(value?: string): string | undefined {
+    if (!value) return undefined;
+    if (/^\d+(\.\d+)?$/.test(value)) {
+      const seconds = Number(value);
+      if (!Number.isNaN(seconds)) {
+        return toPacificIso(seconds * 1000);
+      }
+    }
+    return ensurePacificIso(value) ?? undefined;
+  }
+
+  private formatUnixTimestamp(value?: number): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (!Number.isFinite(value)) return undefined;
+    try {
+      return toPacificIso(value * 1000);
+    } catch {
+      return undefined;
+    }
   }
 }

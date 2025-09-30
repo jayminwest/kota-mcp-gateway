@@ -51,6 +51,13 @@ const ConfigSchema = z.object({
   SLACK_TEAM_ID: z.string().optional(),
   SLACK_TEAM_NAME: z.string().optional(),
 
+  SPOTIFY_CLIENT_ID: z.string().optional(),
+  SPOTIFY_CLIENT_SECRET: z.string().optional(),
+  SPOTIFY_REDIRECT_URI: z.string().optional(),
+  SPOTIFY_ACCESS_TOKEN: z.string().optional(),
+  SPOTIFY_REFRESH_TOKEN: z.string().optional(),
+  SPOTIFY_TOKEN_EXPIRES_AT: z.coerce.number().optional(),
+
   MCP_AUTH_TOKEN: z.string().optional(),
 
   // GitHub

@@ -1,10 +1,15 @@
 import type { Router } from 'express';
 import { BaseWebhook, type WebhookContext, type WebhookProcessResult } from './base.js';
 import { WhoopClient } from '../utils/whoop.js';
+import { toPacificDate } from '../utils/time.js';
 
 function isoDateFrom(input?: string): string {
-  const date = input ? new Date(input) : new Date();
-  return Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
+  try {
+    const value = input ? new Date(input) : new Date();
+    return toPacificDate(value);
+  } catch {
+    return toPacificDate(new Date());
+  }
 }
 
 function minutesBetween(start?: string, end?: string): number | undefined {

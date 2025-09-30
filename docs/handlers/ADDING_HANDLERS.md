@@ -59,12 +59,20 @@ Registering the Handler
 // src/index.ts
 import { MyServiceHandler } from './handlers/my-service.js';
 
-// In handlers array
-const handlers = [
-  // ...existing
-  make(MyServiceHandler),
+const bundleDefinitions: BundleDefinition[] = [
+  // ...existing bundles
+  {
+    key: 'myservice',
+    description: 'Short description shown in toolkit_list_bundles',
+    // Set autoEnable: true to ship it with the core manifest, otherwise enable on demand.
+    autoEnable: false,
+    factory: make(MyServiceHandler),
+    tags: ['optional', 'category'],
+  },
 ];
 ```
+
+Choose a unique `key`, keep descriptions brief (they are surfaced to the LLM), and tag the bundle so it groups logically in `toolkit_list_bundles`.
 
 Adding Configuration
 1) `.env.example` — add placeholder keys:
@@ -139,4 +147,3 @@ Quality Gates
 Documentation
 - Add/Update: docs/handlers/<SERVICE>.md with setup and examples.
 - Update: docs/handlers/README.md index if it’s a new category.
-

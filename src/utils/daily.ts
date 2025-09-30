@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { AppConfig } from './config.js';
 import type { Logger } from './logger.js';
+import { pacificNowIso } from './time.js';
 
 export type DailyEntryCategory =
   | 'food'
@@ -364,7 +365,7 @@ export class DailyStore {
   async upsertDay(input: DailyDayBase): Promise<DailyDayRecord> {
     const data = await this.readFile();
     const key = input.date;
-    const now = new Date().toISOString();
+    const now = pacificNowIso();
     const existing = data.days[key];
     const record: DailyDayRecord = {
       date: input.date,
@@ -390,7 +391,7 @@ export class DailyStore {
   async appendEntries(input: DailyDayBase): Promise<DailyDayRecord> {
     const data = await this.readFile();
     const key = input.date;
-    const now = new Date().toISOString();
+    const now = pacificNowIso();
     const existing = data.days[key];
     if (!existing) {
       const record: DailyDayRecord = {

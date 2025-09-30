@@ -38,7 +38,7 @@ Webhook configuration lives at `data/config/webhooks.json` (create the file if i
 ## Developer Workflow
 
 - `npm run webhook:test whoop` prints a sample payload and curl snippet.
-- Use `daily_get_day` / `vitals_get_day` to verify stored entries after webhook ingestion.
+- Use `daily_get_day` to verify stored entries after webhook ingestion.
 - Incoming requests are archived under `data/webhooks/events/YYYY/MM/DD-events.json` for audit and replay.
 - MCP clients can inspect stored deliveries via the `webhooks_list_dates` and `webhooks_get_events` tools.
 - The webhook pipeline now performs event enrichment: persistent dedupe (even across restarts), normalized times, time-of-day tagging, and standardized metadata templates for activity/nutrition/context events.

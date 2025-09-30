@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { RizeClient } from '../utils/rize.js';
+import { ensurePacificIso, toPacificDate } from '../utils/time.js';
 
 const RecentListSchema = z
   .object({
@@ -142,8 +143,18 @@ export class RizeHandler extends BaseHandler {
             0,
           );
           const byDay: Record<string, { seconds: number; sessions: number }> = {};
-          for (const entry of filtered) {
-            const day = new Date(entry.startTime).toISOString().slice(0, 10);
+          const normalizedEntries = filtered.map((entry: any) => {
+            const startTimeFormatted = this.formatTimestamp(entry.startTime);
+            const endTimeFormatted = this.formatTimestamp(entry.endTime);
+            return {
+              ...entry,
+              startTime: startTimeFormatted,
+              endTime: endTimeFormatted,
+            };
+          });
+          for (const entry of normalizedEntries) {
+            const sourceForDay = entry.startTime ?? entry.endTime;
+            const day = sourceForDay ? toPacificDate(sourceForDay) : toPacificDate(new Date());
             if (!byDay[day]) {
               byDay[day] = { seconds: 0, sessions: 0 };
             }
@@ -156,15 +167,15 @@ export class RizeHandler extends BaseHandler {
           return this.json({
             data: {
               summary: {
-                startTime,
-                endTime,
+                startTime: this.formatTimestamp(startTime) ?? startTime,
+                endTime: this.formatTimestamp(endTime) ?? endTime,
                 client: clientName ?? null,
                 totalSeconds,
-                entryCount: filtered.length,
-                distinctClients: new Set(filtered.map((entry: any) => entry?.client?.name)).size,
+                entryCount: normalizedEntries.length,
+                distinctClients: new Set(normalizedEntries.map((entry: any) => entry?.client?.name)).size,
               },
               daily,
-              entries: filtered.slice(0, limit),
+              entries: normalizedEntries.slice(0, limit),
             },
           });
         }
@@ -183,5 +194,9 @@ export class RizeHandler extends BaseHandler {
 
   private empty(message = 'Empty results'): CallToolResult {
     return { content: [{ type: 'text', text: message }] };
+  }
+
+  private formatTimestamp(value?: string): string | undefined {
+    return ensurePacificIso(value) ?? value;
   }
 }

@@ -5,6 +5,7 @@ import type { ToolSpec, HandlerConfig } from '../types/index.js';
 import type { Logger } from '../utils/logger.js';
 import { DailyStore } from '../utils/daily.js';
 import type { DailyTemplateLog } from '../utils/daily.js';
+import { toPacificDate } from '../utils/time.js';
 
 const NonEmptyString = z.string().trim().min(1);
 
@@ -270,7 +271,7 @@ export class DailyHandler extends BaseHandler {
 
   private async handleGetTemplate(raw: unknown): Promise<CallToolResult> {
     const parsed = this.parseArgs(TemplateRequestSchema, raw);
-    const date = parsed.date ?? new Date().toISOString().slice(0, 10);
+    const date = parsed.date ?? toPacificDate(new Date());
     const includeExamples = parsed.includeExamples ?? false;
     const template = this.buildTemplateSkeleton(includeExamples);
     const guidance = this.buildTemplateGuidance();

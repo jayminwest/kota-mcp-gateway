@@ -66,7 +66,7 @@ Each event is logged under `data/webhooks/events/YYYY/MM/DD-events.json` before 
      --data "$payload"
    ```
    _(Drop the Authorization header if you left `auth_token` blank in `webhooks.json`.)_
-3. Verify the entry with `daily_get_day { "date": "YYYY-MM-DD" }` (or the `vitals_*` alias).
+3. Verify the entry with `daily_get_day { "date": "YYYY-MM-DD" }`.
 
 ## Troubleshooting
 

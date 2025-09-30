@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { AppConfig } from './config.js';
 import type { Logger } from './logger.js';
+import { ensurePacificIso, pacificNowIso } from './time.js';
 
 const CATEGORY_NAMES = ['preferences', 'connections', 'patterns', 'shortcuts', 'state'] as const;
 export type MemoryCategory = typeof CATEGORY_NAMES[number];
@@ -41,28 +42,6 @@ interface MemoryPaths {
 }
 
 const VERSION = 2;
-const PACIFIC_TIME_ZONE = 'America/Los_Angeles';
-
-const pacificDateFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: PACIFIC_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  fractionalSecondDigits: 3,
-  hourCycle: 'h23',
-});
-
-const pacificOffsetFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: PACIFIC_TIME_ZONE,
-  timeZoneName: 'shortOffset',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
-});
 
 export interface MemoryMetadata {
   version: number;
@@ -95,46 +74,8 @@ function buildPaths(config: AppConfig): MemoryPaths {
   };
 }
 
-function formatPacificOffset(date: Date): string {
-  const parts = pacificOffsetFormatter.formatToParts(date);
-  const raw = parts.find(part => part.type === 'timeZoneName')?.value ?? 'GMT-00:00';
-  const match = raw.match(/GMT(?<sign>[+-])(?<hours>\d{1,2})(?::(?<minutes>\d{2}))?/);
-  if (match && match.groups) {
-    const sign = match.groups.sign;
-    const hours = match.groups.hours.padStart(2, '0');
-    const minutes = (match.groups.minutes ?? '00').padStart(2, '0');
-    return `${sign}${hours}:${minutes}`;
-  }
-  return '+00:00';
-}
-
-function formatPacificIso(date: Date): string {
-  const parts = pacificDateFormatter.formatToParts(date);
-  const lookup = (type: Intl.DateTimeFormatPart['type']): string =>
-    parts.find(part => part.type === type)?.value ?? '';
-  const year = lookup('year');
-  const month = lookup('month');
-  const day = lookup('day');
-  const hour = lookup('hour');
-  const minute = lookup('minute');
-  const second = lookup('second');
-  const fractional = lookup('fractionalSecond') || '000';
-  return `${year}-${month}-${day}T${hour}:${minute}:${second}.${fractional}${formatPacificOffset(date)}`;
-}
-
-function nowIso(): string {
-  return formatPacificIso(new Date());
-}
-
-function ensurePacificIso(value?: string): string | undefined {
-  if (!value) return undefined;
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return undefined;
-  return formatPacificIso(new Date(parsed));
-}
-
 function ensureTimestampFields(entry: StoredMemoryEntry): void {
-  const createdAt = ensurePacificIso(entry.created_at) ?? ensurePacificIso(entry.created) ?? nowIso();
+  const createdAt = ensurePacificIso(entry.created_at) ?? ensurePacificIso(entry.created) ?? pacificNowIso();
   const lastUpdated =
     ensurePacificIso(entry.last_updated) ??
     ensurePacificIso(entry.updated) ??
@@ -277,7 +218,7 @@ export class KotaMemoryStore {
       acc[category] = 0;
       return acc;
     }, {} as Record<MemoryCategory, number>);
-    const timestamp = nowIso();
+const timestamp = pacificNowIso();
     return {
       version: VERSION,
       updatedAt: timestamp,
@@ -442,8 +383,8 @@ export class KotaMemoryStore {
 
     const baseMetadata: MemoryMetadata = {
       version: VERSION,
-      updatedAt: overrides?.updatedAt ?? nowIso(),
-      lastCleanup: overrides?.lastCleanup ?? (this.metadataCache?.lastCleanup ?? nowIso()),
+      updatedAt: overrides?.updatedAt ?? pacificNowIso(),
+      lastCleanup: overrides?.lastCleanup ?? (this.metadataCache?.lastCleanup ?? pacificNowIso()),
       counts,
       bytes: {
         total: activeTotal + archiveTotal,
@@ -608,7 +549,7 @@ export class KotaMemoryStore {
     reason: ArchiveEntry['reason'],
     timestamp?: string,
   ): ArchiveEntry {
-    const archivedAt = timestamp ?? nowIso();
+    const archivedAt = timestamp ?? pacificNowIso();
     ensureTimestampFields(entry);
     const canonicalEntry: MemoryEntry = {
       value: entry.value,
@@ -675,14 +616,14 @@ export class KotaMemoryStore {
     let archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (cleanupCategories.size || cleanupResult.archiveChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const category = this.inferCategory(key, categoryHint);
     const entries = categories[category];
     const existingKey = this.findExistingKey(entries, key);
     const targetKey = existingKey ?? key.trim();
-    const now = nowIso();
+    const now = pacificNowIso();
     const existing = existingKey ? entries[existingKey] : undefined;
     const createdTimestamp = existing?.created_at ?? now;
     const nextEntry: MemoryEntry = {
@@ -731,7 +672,7 @@ export class KotaMemoryStore {
     let archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (cleanupCategories.size || cleanupResult.archiveChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const normalizedQuery = normalize(query);
@@ -792,7 +733,7 @@ export class KotaMemoryStore {
       return null;
     }
 
-    const now = nowIso();
+    const now = pacificNowIso();
     best.entry.accessed_at = now;
     ensureTimestampFields(best.entry);
     best.entry.hits += 1;
@@ -826,7 +767,7 @@ export class KotaMemoryStore {
     const archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (categoryChanges.size || archivesChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const keys: string[] = [];
@@ -852,7 +793,7 @@ export class KotaMemoryStore {
     const archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (categoryChanges.size || archivesChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const keys: string[] = [];
@@ -898,7 +839,7 @@ export class KotaMemoryStore {
     let archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (cleanupCategories.size || cleanupResult.archiveChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const normalizedKey = normalize(key);
@@ -907,7 +848,7 @@ export class KotaMemoryStore {
       for (const [entryKey, entry] of Object.entries(entries)) {
         if (normalize(entryKey) === normalizedKey) {
           const merged = this.mergeValues(entry.value, addition);
-          const now = nowIso();
+          const now = pacificNowIso();
           entry.value = merged;
           entry.last_updated = now;
           entry.accessed_at = now;
@@ -951,7 +892,7 @@ export class KotaMemoryStore {
     let archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (cleanupCategories.size || cleanupResult.archiveChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const normalizedKey = normalize(key);
@@ -995,7 +936,7 @@ export class KotaMemoryStore {
     let archivesChanged = cleanupResult.archiveChanged;
     let overrides: Partial<Pick<MemoryMetadata, 'updatedAt' | 'lastCleanup'>> | undefined;
     if (cleanupCategories.size || cleanupResult.archiveChanged) {
-      overrides = { lastCleanup: nowIso() };
+      overrides = { lastCleanup: pacificNowIso() };
     }
 
     const stateEntries = categories.state;
@@ -1006,7 +947,7 @@ export class KotaMemoryStore {
       return { cleared: false, message: 'State is already empty.' };
     }
 
-    const snapshotAt = nowIso();
+    const snapshotAt = pacificNowIso();
     const archivedKeys: string[] = [];
     for (const [key, entry] of Object.entries(stateEntries)) {
       const archived = this.archiveEntry(archive, 'state', key, entry, 'state_clear', snapshotAt);

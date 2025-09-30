@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Logger } from './logger.js';
+import { toPacificDate, toPacificIso } from './time.js';
 
 interface StoredWebhookEvent {
   receivedAt: string;
@@ -22,13 +23,14 @@ export class WebhookEventLogger {
 
   async record(source: string, eventType: string, payload: unknown, dedupeKey?: string, metadata?: Record<string, unknown>): Promise<void> {
     const now = new Date();
-    const [year, month, day] = now.toISOString().slice(0, 10).split('-');
+    const receivedAt = toPacificIso(now);
+    const [year, month, day] = toPacificDate(now).split('-');
     const dir = path.resolve(this.baseDir, 'webhooks', 'events', year, month ?? 'unknown');
     await fs.mkdir(dir, { recursive: true });
     const filePath = path.resolve(dir, `${day ?? 'unknown'}-events.json`);
 
     const entry: StoredWebhookEvent = {
-      receivedAt: now.toISOString(),
+      receivedAt,
       source,
       eventType,
       dedupeKey,

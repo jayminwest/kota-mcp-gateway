@@ -1,5 +1,5 @@
-# Nutrition Handler (Alias)
+# Nutrition Handler
 
-The nutrition handler has been renamed to the **Daily Handler** and now covers food, supplements, substances, activities, and training entries. All `nutrition_*` tools continue to work as aliases.
+The dedicated nutrition handler has been merged into the **Daily Handler**. The historical `nutrition_*` MCP aliases were removed to cut the tool manifest size, so invoke the `daily_*` tools directly.
 
 See [DAILY.md](./DAILY.md) for the up-to-date documentation and examples.

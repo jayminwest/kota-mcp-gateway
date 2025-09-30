@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Logger } from './logger.js';
+import { ensurePacificIso, toPacificDate } from './time.js';
 
 export interface StoredWebhookEvent {
   receivedAt: string;
@@ -124,7 +125,7 @@ export class WebhookStore {
         eventCount: filtered.length,
         sources: sourcesCount,
         eventTypes: eventTypeCount,
-        lastReceivedAt,
+        lastReceivedAt: this.formatTimestamp(lastReceivedAt),
         filePath: file.filePath,
         fileSize: file.fileSize,
       });
@@ -154,7 +155,7 @@ export class WebhookStore {
       const preview = this.makePreview(event.payload, payloadPreviewLength);
       const base: WebhookEventResult = {
         index: offset + index,
-        receivedAt: event.receivedAt,
+        receivedAt: this.formatTimestamp(event.receivedAt) ?? event.receivedAt,
         source: event.source,
         eventType: event.eventType,
         dedupeKey: event.dedupeKey,
@@ -214,7 +215,7 @@ export class WebhookStore {
         const preview = this.makePreview(event.payload, payloadPreviewLength);
         const base: WebhookEventResult = {
           index: idx,
-          receivedAt: event.receivedAt,
+          receivedAt: this.formatTimestamp(event.receivedAt) ?? event.receivedAt,
           source: event.source,
           eventType: event.eventType,
           dedupeKey: event.dedupeKey,
@@ -255,7 +256,7 @@ export class WebhookStore {
         const preview = this.makePreview(event.payload, payloadPreviewLength);
         const base: WebhookEventResult = {
           index: idx,
-          receivedAt: event.receivedAt,
+          receivedAt: this.formatTimestamp(event.receivedAt) ?? event.receivedAt,
           source: event.source,
           eventType: event.eventType,
           dedupeKey: event.dedupeKey,
@@ -305,7 +306,13 @@ export class WebhookStore {
       }
     }
 
-    const ordered = Array.from(buckets.values()).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const ordered = Array.from(buckets.values())
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .map(bucket => ({
+        ...bucket,
+        firstEventAt: this.formatTimestamp(bucket.firstEventAt),
+        lastEventAt: this.formatTimestamp(bucket.lastEventAt),
+      }));
     return { window, buckets: ordered };
   }
 
@@ -408,10 +415,15 @@ export class WebhookStore {
     return parts.join(' ');
   }
 
+  private formatTimestamp(value?: string): string | undefined {
+    if (!value) return undefined;
+    return ensurePacificIso(value) ?? value;
+  }
+
   private offsetDate(days: number): string {
     const now = new Date();
     now.setUTCDate(now.getUTCDate() - Math.max(0, days));
-    return now.toISOString().slice(0, 10);
+    return toPacificDate(now);
   }
 
   private resolveBucket(window: 'daily' | 'weekly', timestamp: string, fallbackDate: string): { key: string; startDate: string; endDate: string } {
@@ -447,12 +459,12 @@ export class WebhookStore {
     } else {
       ISOweekStart.setUTCDate(simple.getUTCDate() + 8 - dow);
     }
-    return ISOweekStart.toISOString().slice(0, 10);
+    return toPacificDate(ISOweekStart);
   }
 
   private getISOWeekEnd(year: number, week: number): string {
     const start = new Date(this.getISOWeekStart(year, week));
     start.setUTCDate(start.getUTCDate() + 6);
-    return start.toISOString().slice(0, 10);
+    return toPacificDate(start);
   }
 }

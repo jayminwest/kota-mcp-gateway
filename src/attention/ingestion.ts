@@ -1,6 +1,7 @@
 import type { Logger } from '../utils/logger.js';
 import { logger as rootLogger } from '../utils/logger.js';
 import type { AttentionEvent, RawAttentionEvent } from './types.js';
+import { pacificNowIso } from '../utils/time.js';
 
 export interface AttentionIngestionOptions {
   logger?: Logger;
@@ -17,7 +18,7 @@ export class AttentionIngestionService {
   }
 
   async ingest(event: RawAttentionEvent): Promise<AttentionEvent> {
-    const receivedAt = event.receivedAt ?? new Date().toISOString();
+    const receivedAt = event.receivedAt ?? pacificNowIso();
     const normalized = await this.runEnrichers(event);
     const enriched: AttentionEvent = {
       ...event,

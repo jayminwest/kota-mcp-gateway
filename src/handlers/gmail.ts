@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { getGmail } from '../utils/google.js';
+import { ensurePacificIso } from '../utils/time.js';
 
 const ListMessagesSchema = z.object({
   query: z.string().describe('Gmail search query').optional(),
@@ -81,7 +82,8 @@ export class GmailHandler extends BaseHandler {
     const messages = await Promise.all(ids.map(async (m: any) => {
       const msg = await gmail.users.messages.get({ userId: 'me', id: m.id!, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] });
       const headers = Object.fromEntries((msg.data.payload?.headers || []).map((h: any) => [h.name as string, h.value as string]));
-      return `- ${headers.Date || ''} | ${headers.From || ''} | ${headers.Subject || ''} | id=${msg.data.id}`;
+      const date = headers.Date ? ensurePacificIso(headers.Date) ?? headers.Date : '';
+      return `- ${date} | ${headers.From || ''} | ${headers.Subject || ''} | id=${msg.data.id}`;
     }));
     const out = messages.filter(Boolean);
     return { content: [{ type: 'text', text: out.join('\n') }] };

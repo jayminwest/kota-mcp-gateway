@@ -1,4 +1,5 @@
 import type { AppConfig } from './config.js';
+import { toPacificDate } from './time.js';
 
 const GITHUB_GRAPHQL = 'https://api.github.com/graphql';
 
@@ -155,10 +156,7 @@ export async function getRateStatus(token: string) {
 }
 
 export function toISODateOnly(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return toPacificDate(d);
 }
 
 export function parseDateOrDefault(input?: string, fallbackDays = 7, end = false): Date {

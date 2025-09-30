@@ -7,6 +7,7 @@ import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { parse as parseYAML } from 'yaml';
 import type { Logger } from '../utils/logger.js';
+import { pacificNowIso, toPacificIso } from '../utils/time.js';
 
 const MapSchema = z
   .object({
@@ -222,7 +223,7 @@ export class WorkspaceHandler extends BaseHandler {
     const baseAlias = path.relative(process.cwd(), baseDir).split(path.sep).join('/') || baseDir;
     const scopeAlias = path.relative(baseDir, scopePath).split(path.sep).join('/') || '.';
 
-    const generatedAt = new Date().toISOString();
+    const generatedAt = pacificNowIso();
 
     if (effectiveMode === 'summary') {
       const digest = buildSummaryDigest({
@@ -384,13 +385,13 @@ class WorkspaceBuilder {
       type: 'directory',
       name: path.basename(currentDir) || path.basename(this.baseDir),
       path: relPath,
-      lastModified: stat.mtime.toISOString(),
+      lastModified: toPacificIso(stat.mtime),
       children: [],
       summary: {
         directories: 0,
         files: 0,
         topics: [],
-        latestModified: stat.mtime.toISOString(),
+        latestModified: toPacificIso(stat.mtime),
       },
     };
 
@@ -408,7 +409,7 @@ class WorkspaceBuilder {
       node.summary.directories = hiddenDirs;
       node.summary.files = hiddenFiles;
       node.summary.topics = [];
-      node.summary.latestModified = stat.mtime.toISOString();
+      node.summary.latestModified = toPacificIso(stat.mtime);
       node.truncatedChildren = { directories: hiddenDirs, files: hiddenFiles };
       const parts: string[] = [];
       if (hiddenDirs) parts.push(`${hiddenDirs} more ${hiddenDirs === 1 ? 'directory' : 'directories'}`);
@@ -589,7 +590,7 @@ class WorkspaceBuilder {
       type: 'file',
       name: path.basename(filePath),
       path: relPath,
-      lastModified: stat.mtime.toISOString(),
+      lastModified: toPacificIso(stat.mtime),
       size: stat.size,
       extension,
       metadata: compacted,
