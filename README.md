@@ -31,6 +31,9 @@ Setup
 
 Endpoints
 - `GET /health` – returns `{ status: 'ok', ... }`
+- `GET /kwc` – Kendama run logger UI (lineup editor + run capture)
+- `GET /kwc/api/lineup` | `PUT /kwc/api/lineup` – manage Kendama lineup JSON
+- `GET /kwc/api/runs` | `POST /kwc/api/runs` – list or append Kendama run history
 - `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport
  - `GET /auth/github/status` – GitHub token and rate status
 
@@ -79,3 +82,5 @@ Backups
 
 Notes
 - Handlers added/expanded incrementally; see docs/handlers for per-service guides.
+- Kendama run data lives in `data/kota_kwc/{lineup,runs}.json` alongside other persisted storage.
+- KWC lineup scores auto-derive from the trick level (e.g., `9-1` counts as 9 points).

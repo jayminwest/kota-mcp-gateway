@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from './utils/config.js';
 import { correlationIdMiddleware, logger } from './utils/logger.js';
 import { errorMiddleware } from './middleware/error.js';
@@ -24,8 +26,11 @@ import { ToolkitHandler } from './handlers/toolkit.js';
 import { WorkspaceHandler } from './handlers/workspace.js';
 import { WebhooksHandler } from './handlers/webhooks.js';
 import { SpotifyHandler } from './handlers/spotify.js';
+import { KwcHandler } from './handlers/kwc.js';
 import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
 import type { BaseHandler } from './handlers/base.js';
+import { KwcStore } from './utils/kwc-store.js';
+import { createKwcRouter } from './routes/kwc.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -134,8 +139,22 @@ class BundleRegistry {
 async function main() {
   const config = loadConfig();
   const app = express();
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const kwcPublicDir = path.resolve(moduleDir, '../public/kwc');
 
   app.use(cors());
+  app.get('/kwc', (req, res) => {
+    res.sendFile(path.join(kwcPublicDir, 'index.html'), err => {
+      if (err) {
+        const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
+        ((req as any).log || logger).warn({ err }, 'Failed to serve KWC index');
+        if (!res.headersSent) {
+          res.status(status).end();
+        }
+      }
+    });
+  });
+  app.use('/kwc', express.static(kwcPublicDir, { index: 'index.html', redirect: true }));
   app.use(express.json({
     limit: '4mb',
     verify: (req, _res, buf) => {
@@ -144,6 +163,9 @@ async function main() {
   }));
   app.use(correlationIdMiddleware);
   app.use(optionalAuthMiddleware(config.MCP_AUTH_TOKEN));
+
+  const kwcStore = new KwcStore(config, logger);
+  app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
 
@@ -502,6 +524,13 @@ async function main() {
       tags: ['core', 'health'],
     },
     {
+      key: 'kwc',
+      description: 'Kendama World Cup lineup and run tracking',
+      autoEnable: true,
+      factory: make(KwcHandler),
+      tags: ['optional', 'training'],
+    },
+    {
       key: 'content_calendar',
       description: 'Editorial and campaign planning tools',
       autoEnable: true,
@@ -614,6 +643,7 @@ async function main() {
       '- help://daily/usage (aliases: help://nutrition/usage, help://vitals/usage)',
       '- help://memory/usage',
       '- help://spotify/usage',
+      '- help://kwc/usage',
       '- help://workspace/usage',
     ].join('\n')
   );
@@ -712,6 +742,24 @@ async function main() {
   registerHelpResource('daily_help_usage', 'help://daily/usage', dailyHelpText);
   registerHelpResource('nutrition_help_usage', 'help://nutrition/usage', dailyHelpText);
   registerHelpResource('vitals_help_usage', 'help://vitals/usage', dailyHelpText);
+
+  const kwcHelpText = [
+    'Kendama Run Logger Help',
+    '',
+    'Tools:',
+    '- kwc_get_lineup {}',
+    '- kwc_set_lineup { tricks }',
+    '- kwc_list_runs { date?, limit? }',
+    '- kwc_add_run { date, tricks, notes? }',
+    '- kwc_delete_run { recorded_at }',
+    '',
+    'Notes:',
+    '- Trick scores auto-derive from the trick level (e.g., 9-1 = 9 points).',
+    '- Each run expects exactly the tricks you are tracking; include attempt durations for every trick.',
+    '- Use list_runs with a date filter to pull all attempts for a competition day.',
+  ].join('\n');
+
+  registerHelpResource('kwc_help_usage', 'help://kwc/usage', kwcHelpText);
 
   registerHelpResource(
     'workspace_help_usage',
@@ -884,6 +932,16 @@ async function main() {
       { role: 'assistant', content: { type: 'text', text: 'spotify_get_current {}' } },
       { role: 'assistant', content: { type: 'text', text: 'spotify_recent_tracks { "limit": 10 }' } },
       { role: 'assistant', content: { type: 'text', text: 'spotify_top_items { "type": "tracks", "time_range": "long_term", "limit": 5 }' } },
+    ],
+  }));
+
+  mcp.prompt('kwc.examples', 'Examples for Kendama run logging', async () => ({
+    description: 'KWC lineup and run logging examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_lineup {}' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_set_lineup { "tricks": [{ "code": "9-1" }, { "code": "9-5" }, { "code": "8-4" }] }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_add_run { "date": "2025-10-02", "tricks": [{ "code": "9-1", "attempts": [{ "durationSeconds": 42 }] }, { "code": "9-5", "attempts": [{ "durationSeconds": 55 }] }] }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_list_runs { "date": "2025-10-02" }' } },
     ],
   }));
 

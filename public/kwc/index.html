@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KWC Run Logger</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Kendama Run Logger</h1>
+    <p>Track Kendama World Cup runs, edit your lineup, and review recent sessions.</p>
+  </header>
+  <main>
+    <section id="run-section">
+      <h2>Log Run</h2>
+      <p id="run-total" class="timestamp"></p>
+      <form id="run-form">
+        <div class="form-row">
+          <label>Date
+            <input type="date" name="date" id="run-date" required />
+          </label>
+          <label>Notes
+            <textarea name="notes" id="run-notes" rows="2" placeholder="Optional notes"></textarea>
+          </label>
+        </div>
+        <div id="run-tricks"></div>
+        <div class="button-row">
+          <button type="submit">Record Run</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="lineup-section">
+      <h2>Lineup</h2>
+      <p class="section-hint">Configure your current 10-trick lineup. Scores autofill from the trick level (e.g. 9-1 = 9 points).</p>
+      <form id="lineup-form">
+        <div id="lineup-rows"></div>
+        <div class="button-row">
+          <button type="button" id="add-trick">Add Trick</button>
+          <button type="submit">Save Lineup</button>
+        </div>
+      </form>
+      <p id="lineup-total" class="timestamp"></p>
+      <p id="lineup-updated" class="timestamp"></p>
+    </section>
+
+    <section id="runs-section">
+      <h2>Recent Runs</h2>
+      <div id="runs-list" class="runs-list"></div>
+    </section>
+  </main>
+
+  <div id="messages" role="status" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
