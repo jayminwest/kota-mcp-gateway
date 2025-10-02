@@ -752,11 +752,15 @@ async function main() {
     '- kwc_list_runs { date?, limit? }',
     '- kwc_add_run { date, tricks, notes? }',
     '- kwc_delete_run { recorded_at }',
+    '- kwc_get_trick_stats { trick_code, days? }',
+    '- kwc_get_run_stats { days?, top? }',
+    '- kwc_get_trend { trick_code?, days?, window? }',
     '',
     'Notes:',
     '- Trick scores auto-derive from the trick level (e.g., 9-1 = 9 points).',
     '- Each run expects exactly the tricks you are tracking; include attempt durations for every trick.',
     '- Use list_runs with a date filter to pull all attempts for a competition day.',
+    '- Analytics helpers surface medians, IQR, and rolling trends to gauge consistency over time.',
   ].join('\n');
 
   registerHelpResource('kwc_help_usage', 'help://kwc/usage', kwcHelpText);
@@ -942,6 +946,9 @@ async function main() {
       { role: 'assistant', content: { type: 'text', text: 'kwc_set_lineup { "tricks": [{ "code": "9-1" }, { "code": "9-5" }, { "code": "8-4" }] }' } },
       { role: 'assistant', content: { type: 'text', text: 'kwc_add_run { "date": "2025-10-02", "tricks": [{ "code": "9-1", "attempts": [{ "durationSeconds": 42 }] }, { "code": "9-5", "attempts": [{ "durationSeconds": 55 }] }] }' } },
       { role: 'assistant', content: { type: 'text', text: 'kwc_list_runs { "date": "2025-10-02" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_trick_stats { "trick_code": "9-1", "days": 30 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_run_stats { "days": 14 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_trend { "trick_code": "8-4", "days": 60 }' } },
     ],
   }));
 

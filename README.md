@@ -84,3 +84,4 @@ Notes
 - Handlers added/expanded incrementally; see docs/handlers for per-service guides.
 - Kendama run data lives in `data/kota_kwc/{lineup,runs}.json` alongside other persisted storage.
 - KWC lineup scores auto-derive from the trick level (e.g., `9-1` counts as 9 points).
+- KWC MCP tools offer lineup CRUD plus analytics (`kwc_get_trick_stats`, `kwc_get_run_stats`, `kwc_get_trend`).

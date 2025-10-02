@@ -160,6 +160,19 @@ export class KwcStore {
     return data.runs.sort((a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt));
   }
 
+  async listRunsWithinDays(days?: number): Promise<KwcRunRecord[]> {
+    const runs = await this.listRuns();
+    if (!days || Number.isNaN(days)) {
+      return runs;
+    }
+    const windowMs = Math.max(1, days) * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - windowMs;
+    return runs.filter(run => {
+      const ts = Date.parse(run.recordedAt);
+      return Number.isFinite(ts) && ts >= cutoff;
+    });
+  }
+
   async addRun(input: KwcRunInput): Promise<KwcRunRecord> {
     const data = await this.readRunsFile();
     const normalized = this.normalizeRunInput(input);
