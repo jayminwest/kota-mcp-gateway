@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KWC Analytics</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Kendama Analytics</h1>
+    <p>Visualise consistency, trends, and run metrics from your Kendama training log.</p>
+    <nav class="kwc-nav">
+      <a href="/kwc/">Log Runs</a>
+      <a href="/kwc/stats" class="active">Analytics</a>
+    </nav>
+  </header>
+  <main>
+    <section id="overview-section" class="card">
+      <h2>Overview</h2>
+      <div class="overview-grid">
+        <div class="overview-item">
+          <span class="label">Window</span>
+          <span id="overview-window" class="value">—</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Recent Runs</span>
+          <span id="overview-run-count" class="value">0</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Median Total Time</span>
+          <span id="overview-median-time" class="value">—</span>
+        </div>
+      </div>
+      <div class="controls">
+        <label for="window-select">Lookback window</label>
+        <select id="window-select">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+    </section>
+
+    <section id="trick-section" class="card">
+      <h2>Trick Consistency</h2>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Trick</th>
+              <th>Median (s)</th>
+              <th>IQR (s)</th>
+              <th>Attempts</th>
+              <th>Outliers</th>
+            </tr>
+          </thead>
+          <tbody id="trick-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="trend-section" class="card">
+      <h2>Trends</h2>
+      <div id="trend-grid" class="trend-grid"></div>
+    </section>
+
+    <section id="consistent-runs" class="card">
+      <h2>Most Consistent Runs</h2>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Total Time (s)</th>
+              <th>Total Score</th>
+              <th>Variance</th>
+            </tr>
+          </thead>
+          <tbody id="consistent-runs-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="recent-runs" class="card">
+      <h2>Recent Runs</h2>
+      <div id="recent-runs-list" class="runs-list"></div>
+    </section>
+  </main>
+
+  <div id="messages" role="status" aria-live="polite"></div>
+
+  <script type="module" src="stats.js"></script>
+</body>
+</html>

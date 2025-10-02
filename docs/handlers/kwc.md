@@ -110,6 +110,8 @@ All data persists under `./data/kota_kwc/`:
 
 Lineup and run operations share the same JSON backing as the `/kwc` browser UI, so updates through either path stay in sync.
 
+The analytics dashboard at `/kwc/stats` consumes the same MCP calculations via `GET /kwc/api/analytics`.
+
 ## Verification Tips
 
 - Call `kwc_list_runs { "limit": 5 }` before and after logging to confirm the snapshot changed.

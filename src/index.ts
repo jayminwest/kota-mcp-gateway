@@ -30,7 +30,7 @@ import { KwcHandler } from './handlers/kwc.js';
 import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
 import type { BaseHandler } from './handlers/base.js';
 import { KwcStore } from './utils/kwc-store.js';
-import { createKwcRouter } from './routes/kwc.js';
+import { createKwcRouter, createKwcAnalyticsRouter } from './routes/kwc.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -154,6 +154,17 @@ async function main() {
       }
     });
   });
+  app.get('/kwc/stats', (req, res) => {
+    res.sendFile(path.join(kwcPublicDir, 'stats.html'), err => {
+      if (err) {
+        const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
+        ((req as any).log || logger).warn({ err }, 'Failed to serve KWC stats');
+        if (!res.headersSent) {
+          res.status(status).end();
+        }
+      }
+    });
+  });
   app.use('/kwc', express.static(kwcPublicDir, { index: 'index.html', redirect: true }));
   app.use(express.json({
     limit: '4mb',
@@ -165,6 +176,7 @@ async function main() {
   app.use(optionalAuthMiddleware(config.MCP_AUTH_TOKEN));
 
   const kwcStore = new KwcStore(config, logger);
+  app.use('/kwc/api/analytics', createKwcAnalyticsRouter({ store: kwcStore, logger }));
   app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);

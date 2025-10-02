@@ -6,6 +6,7 @@ import {
   lineupInputSchema,
   runInputSchema,
 } from '../utils/kwc-store.js';
+import { computeAnalyticsSummary } from '../utils/kwc-analytics.js';
 
 interface KwcRouterOptions {
   store: KwcStore;
@@ -67,3 +68,26 @@ export function createKwcRouter({ store, logger }: KwcRouterOptions): express.Ro
   return router;
 }
 
+export function createKwcAnalyticsRouter({ store, logger }: KwcRouterOptions): express.Router {
+  const router = express.Router();
+  const routeLogger = logger.child({ route: 'kwc-analytics' });
+
+  router.get('/', async (req, res, next) => {
+    try {
+      const daysParam = typeof req.query.days === 'string' ? Number.parseInt(req.query.days, 10) : undefined;
+      const windowParam = typeof req.query.window === 'string' ? Number.parseInt(req.query.window, 10) : undefined;
+      const days = Number.isFinite(daysParam) ? daysParam : undefined;
+      const window = Number.isFinite(windowParam) ? windowParam : undefined;
+
+      const runs = await store.listRunsWithinDays(days);
+      const lineup = await store.getLineup();
+      const analytics = computeAnalyticsSummary(runs, lineup, { days, window });
+      routeLogger.debug({ days, window, runs: runs.length }, 'Computed KWC analytics');
+      res.json({ analytics });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  return router;
+}
