@@ -296,7 +296,6 @@ export class KwcHandler extends BaseHandler {
 
     const stats = computeIqr(durations);
     const medianSeconds = stats.median ?? null;
-    const consistencyScore = stats.iqr ?? null;
     const outliers = medianSeconds !== null
       ? durations.filter(value => value > medianSeconds * 2)
       : [];
@@ -310,7 +309,6 @@ export class KwcHandler extends BaseHandler {
       q1Seconds: stats.q1,
       q3Seconds: stats.q3,
       interquartileRangeSeconds: stats.iqr,
-      consistencyScore,
       outliers,
     });
   }

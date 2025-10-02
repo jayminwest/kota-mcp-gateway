@@ -76,9 +76,8 @@ kwc_get_trick_stats {
   "runsObserved": 14,
   "sampleCount": 28,
   "medianSeconds": 42,
-  "interquartileRangeSeconds": 6.5,
-  "consistencyScore": 6.5,
-  "outliers": [95.3]
+"interquartileRangeSeconds": 6.5,
+"outliers": [95.3]
 }
 ```
 
