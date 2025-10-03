@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { Logger } from './logger.js';
 import type { AppConfig } from './config.js';
+import { formatIsoDateInTimeZone } from './timezone.js';
 
 const RUNS_VERSION = 1;
 const LINEUP_VERSION = 1;
@@ -72,12 +73,14 @@ export class KwcStore {
   private readonly runsPath: string;
   private readonly lineupPath: string;
   private readonly logger: Logger;
+  private readonly timeZone: string;
 
   constructor(config: AppConfig, logger: Logger) {
     const baseDir = path.resolve(config.DATA_DIR, 'kota_kwc');
     this.runsPath = path.resolve(baseDir, 'runs.json');
     this.lineupPath = path.resolve(baseDir, 'lineup.json');
     this.logger = logger.child({ component: 'kwc-store' });
+    this.timeZone = config.KWC_TIMEZONE;
   }
 
   private async ensureDir(filePath: string): Promise<void> {
@@ -125,7 +128,7 @@ export class KwcStore {
         const normalized = this.normalizeRunInput(result.data);
         const recordedAt = typeof (rawRun as KwcRunRecord).recordedAt === 'string' && (rawRun as KwcRunRecord).recordedAt
           ? (rawRun as KwcRunRecord).recordedAt
-          : new Date(0).toISOString();
+          : formatIsoDateInTimeZone(new Date(0), this.timeZone);
         runs.push({
           ...normalized,
           recordedAt,
@@ -178,7 +181,7 @@ export class KwcStore {
     const normalized = this.normalizeRunInput(input);
     const record: KwcRunRecord = {
       ...normalized,
-      recordedAt: new Date().toISOString(),
+      recordedAt: formatIsoDateInTimeZone(new Date(), this.timeZone),
     };
     data.runs.push(record);
     await this.writeRunsFile(data);
@@ -230,7 +233,7 @@ export class KwcStore {
       }
       return {
         version: LINEUP_VERSION,
-        updatedAt: new Date(0).toISOString(),
+        updatedAt: formatIsoDateInTimeZone(new Date(0), this.timeZone),
         tricks: [],
       };
     }
@@ -253,10 +256,14 @@ export class KwcStore {
   async saveLineup(tricks: KwcLineupTrick[]): Promise<LineupFileData> {
     const payload: LineupFileData = {
       version: LINEUP_VERSION,
-      updatedAt: new Date().toISOString(),
+      updatedAt: formatIsoDateInTimeZone(new Date(), this.timeZone),
       tricks: this.normalizeLineup(tricks),
     };
     await this.writeLineupFile(payload);
     return payload;
+  }
+
+  getTimeZone(): string {
+    return this.timeZone;
   }
 }

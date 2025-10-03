@@ -20,7 +20,7 @@ export function createKwcRouter({ store, logger }: KwcRouterOptions): express.Ro
   router.get('/runs', async (_req, res, next) => {
     try {
       const runs = await store.listRuns();
-      res.json({ runs });
+      res.json({ runs, timeZone: store.getTimeZone() });
     } catch (err) {
       next(err);
     }
@@ -31,7 +31,7 @@ export function createKwcRouter({ store, logger }: KwcRouterOptions): express.Ro
       const payload = runInputSchema.parse(req.body);
       const record = await store.addRun(payload);
       routeLogger.info({ date: record.date }, 'Recorded KWC run');
-      res.status(201).json({ run: record });
+      res.status(201).json({ run: record, timeZone: store.getTimeZone() });
     } catch (err) {
       if (err instanceof ZodError) {
         res.status(400).json({ error: 'Invalid run payload', issues: err.flatten() });
@@ -44,7 +44,7 @@ export function createKwcRouter({ store, logger }: KwcRouterOptions): express.Ro
   router.get('/lineup', async (_req, res, next) => {
     try {
       const lineup = await store.getLineup();
-      res.json({ lineup });
+      res.json({ lineup, timeZone: store.getTimeZone() });
     } catch (err) {
       next(err);
     }
@@ -55,7 +55,7 @@ export function createKwcRouter({ store, logger }: KwcRouterOptions): express.Ro
       const payload = lineupInputSchema.parse(req.body);
       const lineup = await store.saveLineup(payload.tricks);
       routeLogger.info({ count: lineup.tricks.length }, 'Updated KWC lineup');
-      res.json({ lineup });
+      res.json({ lineup, timeZone: store.getTimeZone() });
     } catch (err) {
       if (err instanceof ZodError) {
         res.status(400).json({ error: 'Invalid lineup payload', issues: err.flatten() });
@@ -83,7 +83,7 @@ export function createKwcAnalyticsRouter({ store, logger }: KwcRouterOptions): e
       const lineup = await store.getLineup();
       const analytics = computeAnalyticsSummary(runs, lineup, { days, window });
       routeLogger.debug({ days, window, runs: runs.length }, 'Computed KWC analytics');
-      res.json({ analytics });
+      res.json({ analytics, timeZone: store.getTimeZone() });
     } catch (err) {
       next(err);
     }

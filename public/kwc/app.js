@@ -15,6 +15,9 @@ const runTricksContainer = document.getElementById('run-tricks');
 const runsList = document.getElementById('runs-list');
 const messagesEl = document.getElementById('messages');
 
+const DEFAULT_TIMEZONE = 'America/Los_Angeles';
+let kwcTimeZone = DEFAULT_TIMEZONE;
+
 let lineup = [];
 
 function scoreFromCode(code) {
@@ -40,11 +43,75 @@ function formatDuration(seconds) {
   return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
 }
 
-function formatLocalTimestamp(isoString) {
+function setConfiguredTimeZone(value) {
+  if (typeof value !== 'string') return;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === kwcTimeZone) return;
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: trimmed }).format(new Date());
+    kwcTimeZone = trimmed;
+    applyRunDateDefault(true);
+  } catch (error) {
+    console.warn('Ignoring invalid timezone from server', trimmed, error);
+  }
+}
+
+function formatTimestamp(isoString) {
   if (!isoString) return '';
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString();
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: kwcTimeZone,
+      timeZoneName: 'short',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(date);
+  } catch (error) {
+    console.warn('Falling back to local timestamp formatting', error);
+    return date.toLocaleString();
+  }
+}
+
+function getCurrentDateInConfiguredZone() {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: kwcTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = formatter.formatToParts(new Date());
+    const map = new Map();
+    parts.forEach(part => {
+      if (part.type !== 'literal' && !map.has(part.type)) {
+        map.set(part.type, part.value);
+      }
+    });
+    const year = map.get('year');
+    const month = map.get('month');
+    const day = map.get('day');
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch (error) {
+    console.warn('Falling back to UTC date for run input', error);
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
+function applyRunDateDefault(force = false) {
+  if (!runDateInput) return;
+  const userSet = runDateInput.dataset.userSet === 'true';
+  if (!force && runDateInput.value) return;
+  if (force && userSet) return;
+  runDateInput.value = getCurrentDateInConfiguredZone();
+  runDateInput.dataset.userSet = 'false';
 }
 
 function captureLineupFromDom() {
@@ -254,6 +321,7 @@ async function loadLineup() {
       throw new Error(`Failed with status ${response.status}`);
     }
     const data = await response.json();
+    setConfiguredTimeZone(data.timeZone);
     const tricks = Array.isArray(data.lineup?.tricks) ? data.lineup.tricks : [];
     lineup = tricks.map(trick => {
       const code = trick.code || '';
@@ -267,7 +335,7 @@ async function loadLineup() {
     renderLineup();
     renderRunForm();
     if (data.lineup?.updatedAt) {
-      const stamp = formatLocalTimestamp(data.lineup.updatedAt);
+      const stamp = formatTimestamp(data.lineup.updatedAt);
       lineupUpdatedEl.textContent = stamp ? `Last updated ${stamp}` : '';
     } else {
       lineupUpdatedEl.textContent = lineup.length ? 'Lineup loaded.' : 'No lineup saved yet.';
@@ -288,6 +356,7 @@ async function loadRuns() {
       throw new Error(`Failed with status ${response.status}`);
     }
     const data = await response.json();
+    setConfiguredTimeZone(data.timeZone);
     renderRunsList(Array.isArray(data.runs) ? data.runs : []);
   } catch (error) {
     console.error('Failed to load runs', error);
@@ -333,7 +402,7 @@ function renderRunsList(runs) {
       }, 0);
       return sum + attemptTotal;
     }, 0);
-    const timestamp = formatLocalTimestamp(run.recordedAt);
+    const timestamp = formatTimestamp(run.recordedAt);
     const stampText = timestamp ? `Logged ${timestamp}` : 'Logged';
     meta.textContent = `${stampText} • Total Score: ${totalScore} points • Total Time: ${Math.round(totalSeconds)}s`;
     item.appendChild(meta);
@@ -387,6 +456,7 @@ async function handleLineupSubmit(event) {
       throw new Error(errorText || `Failed with status ${response.status}`);
     }
     const data = await response.json();
+    setConfiguredTimeZone(data.timeZone);
     const tricks = Array.isArray(data.lineup?.tricks) ? data.lineup.tricks : cleaned;
     lineup = tricks.map(trick => {
       const code = trick.code || '';
@@ -399,7 +469,7 @@ async function handleLineupSubmit(event) {
     });
     renderLineup();
     renderRunForm();
-    const stamp = data.lineup?.updatedAt ? formatLocalTimestamp(data.lineup.updatedAt) : '';
+    const stamp = data.lineup?.updatedAt ? formatTimestamp(data.lineup.updatedAt) : '';
     lineupUpdatedEl.textContent = stamp ? `Last updated ${stamp}` : 'Lineup saved.';
     setMessage('success', 'Lineup saved.');
   } catch (error) {
@@ -457,11 +527,13 @@ async function handleRunSubmit(event) {
       const errorText = await response.text();
       throw new Error(errorText || `Failed with status ${response.status}`);
     }
+    const data = await response.json();
+    setConfiguredTimeZone(data.timeZone);
     await loadRuns();
     runForm.reset();
     if (runDateInput) {
-      const today = new Date().toISOString().slice(0, 10);
-      runDateInput.value = today;
+      runDateInput.value = getCurrentDateInConfiguredZone();
+      runDateInput.dataset.userSet = 'false';
     }
     renderRunForm();
     setMessage('success', 'Run recorded.');
@@ -485,13 +557,6 @@ function parseAttemptsValue(source) {
     .filter(value => Number.isFinite(value) && value >= 0);
 }
 
-function initialiseDate() {
-  if (runDateInput) {
-    const today = new Date().toISOString().slice(0, 10);
-    runDateInput.value = today;
-  }
-}
-
 addTrickButton.addEventListener('click', () => {
   clearMessage();
   lineup = captureLineupFromDom();
@@ -503,7 +568,13 @@ addTrickButton.addEventListener('click', () => {
 lineupForm.addEventListener('submit', handleLineupSubmit);
 runForm.addEventListener('submit', handleRunSubmit);
 
-initialiseDate();
+if (runDateInput) {
+  runDateInput.addEventListener('input', () => {
+    runDateInput.dataset.userSet = 'true';
+  });
+}
+
+applyRunDateDefault(true);
 loadLineup().then(() => {
   if (!lineup.length) {
     // Seed with ten blank rows to guide input.

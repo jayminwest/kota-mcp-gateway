@@ -24,6 +24,10 @@ The Kendama World Cup (KWC) handler exposes the same run data that powers the lo
 
 > Scores are inferred from the trick level—`9-1` is always worth 9 points, `8-4` is 8 points, etc. Submit the trick codes in the order you performed them to keep totals accurate.
 
+## Configuration
+
+- Set `KWC_TIMEZONE` in `.env` to control the timezone used for `recordedAt`/`updatedAt` timestamps. The default is `America/Los_Angeles` (Pacific Time). All stored values include the UTC offset so downstream consumers can parse them without extra context.
+
 ## Lineup Payload
 
 ```jsonc

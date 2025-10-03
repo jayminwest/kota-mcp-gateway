@@ -88,3 +88,4 @@ Notes
 - KWC lineup scores auto-derive from the trick level (e.g., `9-1` counts as 9 points).
 - KWC MCP tools offer lineup CRUD plus analytics (`kwc_get_trick_stats`, `kwc_get_run_stats`, `kwc_get_trend`).
 - KWC web UI includes `/kwc/stats` analytics view powered by the same MCP calculations.
+- KWC timestamps default to Pacific Time; set `KWC_TIMEZONE` to another IANA zone if needed.

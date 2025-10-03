@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { isValidTimeZone } from './timezone.js';
 
 dotenv.config();
 
@@ -11,6 +12,17 @@ const ConfigSchema = z.object({
 
   DATA_DIR: z.string().default('data'),
   KNOWLEDGE_BASE_PATH: z.string().default('data/knowledge'),
+  KWC_TIMEZONE: z
+    .string()
+    .default('America/Los_Angeles')
+    .superRefine((value, ctx) => {
+      if (!isValidTimeZone(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid IANA timezone: ${value}`,
+        });
+      }
+    }),
 
   GMAIL_CLIENT_ID: z.string().optional(),
   GMAIL_CLIENT_SECRET: z.string().optional(),
