@@ -188,6 +188,25 @@ export class KwcStore {
     return record;
   }
 
+  async updateRun(recordedAt: string, input: KwcRunInput): Promise<KwcRunRecord | null> {
+    if (!recordedAt) {
+      return null;
+    }
+    const data = await this.readRunsFile();
+    const index = data.runs.findIndex(run => run.recordedAt === recordedAt);
+    if (index === -1) {
+      return null;
+    }
+    const normalized = this.normalizeRunInput(input);
+    const record: KwcRunRecord = {
+      ...normalized,
+      recordedAt,
+    };
+    data.runs[index] = record;
+    await this.writeRunsFile(data);
+    return record;
+  }
+
   async findRun(recordedAt: string): Promise<KwcRunRecord | null> {
     if (!recordedAt) return null;
     const data = await this.readRunsFile();

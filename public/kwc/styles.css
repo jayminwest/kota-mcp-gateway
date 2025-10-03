@@ -414,9 +414,38 @@ th, td {
   margin: 0 0 0.5rem 0;
 }
 
+.run-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.run-item-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .run-item ul {
   margin: 0;
   padding-left: 1.1rem;
+}
+
+.run-edit-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.run-edit-form .button-row {
+  margin-top: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .run-edit-form {
+    border-top-color: rgba(255, 255, 255, 0.15);
+  }
 }
 
 #messages {

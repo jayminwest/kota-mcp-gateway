@@ -19,6 +19,7 @@ const DEFAULT_TIMEZONE = 'America/Los_Angeles';
 let kwcTimeZone = DEFAULT_TIMEZONE;
 
 let lineup = [];
+let activeRunEditor = null;
 
 function scoreFromCode(code) {
   if (!code) return 0;
@@ -41,6 +42,41 @@ function formatDuration(seconds) {
   if (!Number.isFinite(value) || value < 0) return '?';
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded}s` : `${rounded.toFixed(1)}s`;
+}
+
+function computeRunTotals(run) {
+  if (!run || !Array.isArray(run.tricks)) {
+    return { totalScore: 0, totalSeconds: 0 };
+  }
+  const totals = { totalScore: 0, totalSeconds: 0 };
+  run.tricks.forEach(trick => {
+    const score = Number.isFinite(trick.score) ? trick.score : scoreFromCode(trick.code);
+    totals.totalScore += score;
+    const attempts = Array.isArray(trick.attempts) ? trick.attempts : [];
+    attempts.forEach(attempt => {
+      const value = Number(attempt.durationSeconds);
+      if (Number.isFinite(value) && value >= 0) {
+        totals.totalSeconds += value;
+      }
+    });
+  });
+  return totals;
+}
+
+function formatAttemptsForInput(trick) {
+  const attempts = Array.isArray(trick?.attempts) ? trick.attempts : [];
+  if (!attempts.length) return '';
+  return attempts
+    .map(entry => {
+      const value = Number(entry.durationSeconds);
+      if (!Number.isFinite(value) || value < 0) {
+        return null;
+      }
+      const rounded = Math.round(value * 10) / 10;
+      return Number.isInteger(rounded) ? `${rounded}` : `${rounded.toFixed(1)}`;
+    })
+    .filter(Boolean)
+    .join(', ');
 }
 
 function setConfiguredTimeZone(value) {
@@ -364,9 +400,32 @@ async function loadRuns() {
   }
 }
 
+function closeActiveRunEditor() {
+  if (activeRunEditor?.form) {
+    if (activeRunEditor.form.parentElement) {
+      activeRunEditor.form.parentElement.removeChild(activeRunEditor.form);
+    }
+    activeRunEditor = null;
+  }
+}
+
+function openRunEditor(run, container) {
+  if (activeRunEditor?.recordedAt === run.recordedAt) {
+    closeActiveRunEditor();
+    return;
+  }
+  closeActiveRunEditor();
+  const form = buildRunEditForm(run);
+  container.appendChild(form);
+  activeRunEditor = { recordedAt: run.recordedAt, form };
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function renderRunsList(runs) {
+  const normalizedRuns = Array.isArray(runs) ? [...runs] : [];
+  closeActiveRunEditor();
   runsList.innerHTML = '';
-  if (!runs.length) {
+  if (!normalizedRuns.length) {
     const empty = document.createElement('p');
     empty.className = 'section-hint';
     empty.textContent = 'No runs recorded yet. Enter your first session above.';
@@ -374,52 +433,248 @@ function renderRunsList(runs) {
     return;
   }
 
-  runs.forEach(run => {
-    const item = document.createElement('div');
-    item.className = 'run-item';
-
-    const title = document.createElement('h3');
-    title.textContent = run.date;
-    item.appendChild(title);
-
-    if (run.notes) {
-      const notes = document.createElement('p');
-      notes.textContent = run.notes;
-      item.appendChild(notes);
-    }
-
-    const meta = document.createElement('p');
-    meta.className = 'timestamp';
-    const totalScore = (run.tricks || []).reduce((sum, trick) => {
-      const score = Number.isFinite(trick.score) ? trick.score : scoreFromCode(trick.code);
-      return sum + score;
-    }, 0);
-    const totalSeconds = (run.tricks || []).reduce((sum, trick) => {
-      const attempts = Array.isArray(trick.attempts) ? trick.attempts : [];
-      const attemptTotal = attempts.reduce((innerSum, attempt) => {
-        const value = Number(attempt.durationSeconds);
-        return Number.isFinite(value) && value >= 0 ? innerSum + value : innerSum;
-      }, 0);
-      return sum + attemptTotal;
-    }, 0);
-    const timestamp = formatTimestamp(run.recordedAt);
-    const stampText = timestamp ? `Logged ${timestamp}` : 'Logged';
-    meta.textContent = `${stampText} • Total Score: ${totalScore} points • Total Time: ${Math.round(totalSeconds)}s`;
-    item.appendChild(meta);
-
-    const list = document.createElement('ul');
-    (run.tricks || []).forEach((trick, index) => {
-      const li = document.createElement('li');
-      const attempts = (trick.attempts || []).map(entry => formatDuration(entry.durationSeconds)).join(', ');
-      const labelPart = trick.label ? ` – ${trick.label}` : '';
-      const score = Number.isFinite(trick.score) ? trick.score : scoreFromCode(trick.code);
-      li.textContent = `${index + 1}. ${trick.code || 'Trick'}${labelPart} (${score} pts): ${attempts}`;
-      list.appendChild(li);
-    });
-    item.appendChild(list);
-
+  normalizedRuns.forEach(run => {
+    const item = createRunListItem(run);
     runsList.appendChild(item);
   });
+}
+
+function createRunListItem(run) {
+  const item = document.createElement('div');
+  item.className = 'run-item';
+
+  const header = document.createElement('div');
+  header.className = 'run-item-header';
+
+  const title = document.createElement('h3');
+  title.textContent = run.date;
+  header.appendChild(title);
+
+  if (Array.isArray(run.tricks) && run.tricks.length) {
+    const actions = document.createElement('div');
+    actions.className = 'run-item-actions';
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'small-button';
+    editButton.textContent = 'Edit times';
+    editButton.addEventListener('click', () => {
+      openRunEditor(run, item);
+    });
+    actions.appendChild(editButton);
+    header.appendChild(actions);
+  }
+
+  item.appendChild(header);
+
+  if (run.notes) {
+    const notes = document.createElement('p');
+    notes.textContent = run.notes;
+    item.appendChild(notes);
+  }
+
+  const meta = document.createElement('p');
+  meta.className = 'timestamp';
+  const { totalScore, totalSeconds } = computeRunTotals(run);
+  const timestamp = formatTimestamp(run.recordedAt);
+  const stampText = timestamp ? `Logged ${timestamp}` : 'Logged';
+  const totalTimeText = formatDuration(totalSeconds);
+  meta.textContent = `${stampText} • Total Score: ${totalScore} points • Total Time: ${totalTimeText}`;
+  item.appendChild(meta);
+
+  const list = document.createElement('ul');
+  (run.tricks || []).forEach((trick, index) => {
+    const li = document.createElement('li');
+    const attempts = (trick.attempts || []).map(entry => formatDuration(entry.durationSeconds)).join(', ');
+    const labelPart = trick.label ? ` – ${trick.label}` : '';
+    const score = Number.isFinite(trick.score) ? trick.score : scoreFromCode(trick.code);
+    li.textContent = `${index + 1}. ${trick.code || 'Trick'}${labelPart} (${score} pts): ${attempts}`;
+    list.appendChild(li);
+  });
+  item.appendChild(list);
+
+  return item;
+}
+
+function buildRunEditForm(run) {
+  const form = document.createElement('form');
+  form.className = 'run-edit-form';
+  form.noValidate = true;
+
+  const detailsRow = document.createElement('div');
+  detailsRow.className = 'form-row';
+
+  const dateLabel = document.createElement('label');
+  dateLabel.textContent = 'Run date';
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.name = 'date';
+  dateInput.required = true;
+  dateInput.value = run.date || '';
+  dateLabel.appendChild(dateInput);
+  detailsRow.appendChild(dateLabel);
+
+  const notesLabel = document.createElement('label');
+  notesLabel.textContent = 'Notes (optional)';
+  const notesInput = document.createElement('textarea');
+  notesInput.name = 'notes';
+  notesInput.rows = 2;
+  notesInput.value = run.notes || '';
+  notesLabel.appendChild(notesInput);
+  detailsRow.appendChild(notesLabel);
+
+  form.appendChild(detailsRow);
+
+  const tricks = Array.isArray(run.tricks) ? run.tricks : [];
+  if (!tricks.length) {
+    const warning = document.createElement('p');
+    warning.className = 'section-hint';
+    warning.textContent = 'This run has no trick attempts to edit.';
+    form.appendChild(warning);
+  }
+
+  tricks.forEach((trick, index) => {
+    const card = document.createElement('div');
+    card.className = 'trick-card';
+
+    const heading = document.createElement('h3');
+    const labelPart = trick.label ? ` – ${trick.label}` : '';
+    heading.textContent = `${index + 1}. ${trick.code || 'Trick'}${labelPart}`;
+    card.appendChild(heading);
+
+    const scoreInfo = document.createElement('p');
+    scoreInfo.className = 'timestamp';
+    const score = Number.isFinite(trick.score) ? trick.score : scoreFromCode(trick.code);
+    scoreInfo.textContent = `Score: ${score} point${score === 1 ? '' : 's'}`;
+    card.appendChild(scoreInfo);
+
+    const attemptsLabel = document.createElement('label');
+    attemptsLabel.textContent = 'Attempt durations (seconds)';
+
+    const attemptsInput = document.createElement('input');
+    attemptsInput.type = 'text';
+    attemptsInput.name = `attempts-${index}`;
+    attemptsInput.placeholder = 'e.g., 40, 37.5, 32';
+    attemptsInput.autocomplete = 'off';
+    attemptsInput.value = formatAttemptsForInput(trick);
+
+    attemptsLabel.appendChild(attemptsInput);
+    card.appendChild(attemptsLabel);
+    form.appendChild(card);
+  });
+
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'button-row';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.textContent = 'Cancel';
+  cancelButton.addEventListener('click', () => {
+    if (activeRunEditor?.form === form) {
+      closeActiveRunEditor();
+    } else {
+      form.remove();
+    }
+  });
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'submit';
+  saveButton.textContent = 'Save changes';
+
+  buttonRow.append(cancelButton, saveButton);
+  form.appendChild(buttonRow);
+
+  form.addEventListener('submit', event => {
+    handleRunEditSubmit(event, run, form);
+  });
+
+  return form;
+}
+
+async function handleRunEditSubmit(event, run, form) {
+  event.preventDefault();
+  clearMessage();
+
+  const formData = new FormData(form);
+  const dateValue = formData.get('date');
+  if (!dateValue) {
+    setMessage('error', 'Date is required.');
+    return;
+  }
+
+  const tricks = Array.isArray(run.tricks) ? run.tricks : [];
+  if (!tricks.length) {
+    setMessage('error', 'There are no tricks to update for this run.');
+    return;
+  }
+
+  const tricksPayload = [];
+  for (let index = 0; index < tricks.length; index += 1) {
+    const baseTrick = tricks[index];
+    const attemptsRaw = formData.get(`attempts-${index}`);
+    const attempts = parseAttemptsValue(attemptsRaw ?? '');
+    if (!attempts.length) {
+      setMessage('error', `Enter at least one attempt time for trick ${index + 1}.`);
+      return;
+    }
+    tricksPayload.push({
+      code: baseTrick.code,
+      label: baseTrick.label ? baseTrick.label : undefined,
+      score: scoreFromCode(baseTrick.code),
+      attempts: attempts.map(value => ({ durationSeconds: value })),
+    });
+  }
+
+  const notesRaw = formData.get('notes');
+  const notesValue = notesRaw ? notesRaw.toString().trim() : '';
+  const payload = {
+    date: dateValue.toString(),
+    notes: notesValue ? notesValue : undefined,
+    tricks: tricksPayload,
+  };
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+
+  let succeeded = false;
+  try {
+    const response = await fetch(`${API_BASE}/runs/${encodeURIComponent(run.recordedAt)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      let message = `Failed with status ${response.status}`;
+      try {
+        const parsed = JSON.parse(errorText);
+        if (parsed?.error) {
+          message = parsed.error;
+        }
+      } catch {
+        if (errorText) {
+          message = errorText;
+        }
+      }
+      throw new Error(message);
+    }
+    const data = await response.json();
+    setConfiguredTimeZone(data.timeZone);
+    succeeded = true;
+    await loadRuns();
+    setMessage('success', 'Run updated.');
+  } catch (error) {
+    console.error('Failed to update run', error);
+    setMessage('error', error instanceof Error ? error.message : 'Unable to update run.');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+    if (succeeded) {
+      closeActiveRunEditor();
+    }
+  }
 }
 
 async function handleLineupSubmit(event) {

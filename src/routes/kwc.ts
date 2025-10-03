@@ -41,6 +41,31 @@ export function createKwcRouter({ store, logger }: KwcRouterOptions): express.Ro
     }
   });
 
+  router.put('/runs/:recordedAt', async (req, res, next) => {
+    const { recordedAt } = req.params;
+    if (!recordedAt) {
+      res.status(400).json({ error: 'Missing recordedAt parameter' });
+      return;
+    }
+
+    try {
+      const payload = runInputSchema.parse(req.body);
+      const updated = await store.updateRun(recordedAt, payload);
+      if (!updated) {
+        res.status(404).json({ error: 'Run not found' });
+        return;
+      }
+      routeLogger.info({ date: updated.date }, 'Updated KWC run');
+      res.json({ run: updated, timeZone: store.getTimeZone() });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        res.status(400).json({ error: 'Invalid run payload', issues: err.flatten() });
+        return;
+      }
+      next(err);
+    }
+  });
+
   router.get('/lineup', async (_req, res, next) => {
     try {
       const lineup = await store.getLineup();

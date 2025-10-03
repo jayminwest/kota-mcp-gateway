@@ -15,6 +15,8 @@ The Kendama World Cup (KWC) handler exposes the same run data that powers the lo
   - Records a run. Supply the 10-trick sequence with attempt durations in seconds. The response echoes `totalScore` and `totalRunTimeSeconds` for the new entry.
 - `kwc_delete_run { recorded_at }`
   - Deletes a run using the `recorded_at` timestamp returned by `kwc_add_run` / `kwc_list_runs`.
+- `kwc_update_run { recorded_at, date, tricks, notes? }`
+  - Overwrites a run in-place using the same payload as `kwc_add_run`. Use this to correct attempt durations without creating duplicate entries.
 - `kwc_get_trick_stats { trick_code, days? }`
   - Computes medians, interquartile range (IQR), and outlier attempts for a trick. Lower IQR = more consistent.
 - `kwc_get_run_stats { days?, top? }`

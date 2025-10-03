@@ -47,6 +47,10 @@ const DeleteRunArgsSchema = z
   })
   .strip();
 
+const UpdateRunArgsSchema = runInputSchema.extend({
+  recorded_at: IsoTimestamp,
+});
+
 const DaysSchema = z
   .number()
   .int()
@@ -95,6 +99,7 @@ type TrendArgs = z.infer<typeof TrendArgsSchema>;
 
 type ListRunsArgs = z.infer<typeof ListRunsArgsSchema>;
 type DeleteRunArgs = z.infer<typeof DeleteRunArgsSchema>;
+type UpdateRunArgs = z.infer<typeof UpdateRunArgsSchema>;
 
 type RunInput = z.infer<typeof runInputSchema>;
 type LineupInput = z.infer<typeof lineupInputSchema>;
@@ -137,6 +142,11 @@ export class KwcHandler extends BaseHandler {
         inputSchema: DeleteRunArgsSchema.shape,
       },
       {
+        action: 'update_run',
+        description: 'Overwrite a run (identified by recorded_at) with new timings',
+        inputSchema: UpdateRunArgsSchema.shape,
+      },
+      {
         action: 'get_trick_stats',
         description: 'Compute consistency metrics for a specific trick',
         inputSchema: TrickStatsArgsSchema.shape,
@@ -167,6 +177,8 @@ export class KwcHandler extends BaseHandler {
           return await this.handleAddRun(args);
         case 'delete_run':
           return await this.handleDeleteRun(args);
+        case 'update_run':
+          return await this.handleUpdateRun(args);
         case 'get_trick_stats':
           return await this.handleGetTrickStats(args);
         case 'get_run_stats':
@@ -216,6 +228,29 @@ export class KwcHandler extends BaseHandler {
     const args = this.parseArgs(DeleteRunArgsSchema, rawArgs) as DeleteRunArgs;
     const deleted = await this.store.deleteRun(args.recorded_at);
     return this.ok({ recorded_at: args.recorded_at, deleted });
+  }
+
+  private async handleUpdateRun(rawArgs: unknown): Promise<CallToolResult> {
+    const args = this.parseArgs(UpdateRunArgsSchema, rawArgs) as UpdateRunArgs;
+    const { recorded_at, ...rest } = args;
+    const runInput: RunInput = {
+      date: rest.date,
+      notes: rest.notes,
+      tricks: rest.tricks,
+    };
+    const updated = await this.store.updateRun(recorded_at, runInput);
+    if (!updated) {
+      return this.ok({
+        recorded_at,
+        updated: false,
+        message: 'Run not found',
+      });
+    }
+    return this.ok({
+      recorded_at,
+      updated: true,
+      run: decorateRun(updated),
+    });
   }
 
   private async handleGetTrickStats(rawArgs: unknown): Promise<CallToolResult> {

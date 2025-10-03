@@ -35,6 +35,7 @@ Endpoints
 - `GET /kwc/stats` – Kendama analytics dashboard (consistency + trends)
 - `GET /kwc/api/lineup` | `PUT /kwc/api/lineup` – manage Kendama lineup JSON
 - `GET /kwc/api/runs` | `POST /kwc/api/runs` – list or append Kendama run history
+- `PUT /kwc/api/runs/:recordedAt` – overwrite a run's attempts (fix mis-entered times)
 - `GET /kwc/api/analytics` – aggregate Kendama stats (query: `days`, `window`)
 - `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport
  - `GET /auth/github/status` – GitHub token and rate status
