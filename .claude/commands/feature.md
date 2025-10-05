@@ -1,92 +1,103 @@
 # Feature Planning
 
-Create a new plan in `docs/specs/*.md` to implement the `Feature` using the exact specified markdown `Plan Format`. Follow the `Instructions` to create the plan and use the `Relevant Files` guidance to stay aligned with the KOTA MCP Gateway architecture.
+Author a comprehensive plan for a new capability in `docs/specs/*.md`. Include the issue number in the filename (e.g., `docs/specs/feature-2070-team-dashboard.md`).
+
+## Pre-Plan Git/GitHub Checklist
+
+1. `git fetch --all --prune`
+2. `git status --short` (must be clean)
+3. `gh issue view <issue-number>` – capture user story, acceptance criteria, labels
+4. Review related discussions/PRs: `gh pr list --search "#<issue-number>"`
 
 ## Instructions
-- IMPORTANT: You're writing a plan to implement a net-new feature described in the provided `Feature` payload.
-- IMPORTANT: Do **not** implement the feature now; produce the plan using the `Plan Format` below.
+
+- Anchor the plan to the user value described in issue #<number>.
+- Reference the issue at the top of the spec and in subsequent sections.
+- Consider MCP handler design, Express routes, utility impacts, and rollout strategy.
+- Use KOTA conventions: `npm` package manager, TypeScript, Express + MCP architecture.
+- Log additional tooling in **Notes** section.
+- IMPORTANT: You're writing a plan to implement a net-new feature. Do **not** implement the feature now; produce the plan using the `Plan Format` below.
 - Research the codebase fully: begin with `README.md`, review `docs/specs/` for prior art, and inspect `docs/handlers/`, `docs/webhooks/`, and existing handler implementations in `src/`.
 - Follow current conventions for handlers, middleware, utils, and documentation.
-- Create the plan file within `docs/specs/`, naming it after the feature. Create the directory if missing.
+- Create the plan file within `docs/specs/`, naming it after the feature with issue number. Create the directory if missing.
 - Use the plan format exactly as provided; replace each `<placeholder>` with the correct details.
 - THINK HARD about design, extensibility, and potential regressions.
 - Keep the solution aligned with the gateway's modular structure (handlers, utilities, transport, docs).
-- If you need new dependencies, record them in `Notes` with the appropriate `npm` commands.
-- Respect the `Relevant Files` guidance when planning.
 
 ## Relevant Files
-Review these areas while shaping the feature plan:
-- `README.md` – global architecture, setup, and runtime expectations.
-- `src/index.ts` & `src/**` – server bootstrap, handler registration, utilities, middleware.
-- `docs/handlers/**` & `docs/webhooks/**` – documentation patterns to keep updated.
-- `docs/specs/**` – existing specifications and planning docs (extend here).
-- `scripts/**` – automation or helper scripts that might need updates.
-- `public/kwc/**` – UI artifacts if the feature touches Kendama dashboards.
 
-Ignore other directories unless the feature explicitly requires them.
+Investigate across:
+
+- `src/index.ts` & `src/**` – server bootstrap, handler registration, utilities, middleware
+- `docs/handlers/**` & `docs/webhooks/**` – documentation patterns to keep updated
+- `docs/specs/**` – existing specifications and planning docs (extend here)
+- `scripts/**` – automation or helper scripts that might need updates
+- `public/kwc/**` – UI artifacts if the feature touches Kendama dashboards
+- `README.md` – global architecture, setup, and runtime expectations
+
+Expand scope only if the feature evidence requires it.
 
 ## Plan Format
-```md
-# Feature: <feature name>
 
-## Feature Description
-<describe the feature in detail, including its purpose and value to users>
+```md
+# Feature: <feature name> (Issue #<number>)
 
 ## User Story
-As a <type of user>
-I want to <action/goal>
-So that <benefit/value>
 
-## Problem Statement
-<clearly define the specific problem or opportunity this feature addresses>
+<"As a ..." story plus success definition>
 
-## Solution Statement
-<describe the proposed solution approach and how it solves the problem>
+## Objectives & Non-Goals
 
-## Relevant Files
-Use these files to implement the feature:
+<bullets for desired outcomes and explicit non-goals>
 
-<find and list the files that are relevant to the feature describe why they are relevant in bullet points. If there are new files that need to be created to implement the feature, list them in an h3 'New Files' section.>
+## Current State & Constraints
 
-## Implementation Plan
-### Phase 1: Foundation
-<describe the foundational work needed before implementing the main feature>
+<overview of existing behavior, technical constraints, dependencies>
 
-### Phase 2: Core Implementation
-<describe the main implementation work for the feature>
+## Experience & Acceptance Criteria
 
-### Phase 3: Integration
-<describe how the feature will integrate with existing functionality>
+<describe MCP tool flows, Express routes, handler updates; include a checklist with `- [ ]` items>
 
-## Step by Step Tasks
-IMPORTANT: Execute every step in order, top to bottom.
+## Architecture & Data Changes
 
-<list step by step tasks as h3 headers plus bullet points. use as many h3 headers as needed to implement the feature. Order matters, start with the foundational shared changes required then move on to the specific implementation. Include creating tests throughout the implementation process. Your last step should be running the `Validation Commands` to validate the feature works correctly with zero regressions.>
+<detail MCP handler design, Express routes, utilities, shared types, data storage patterns>
 
-## Testing Strategy
-### Unit Tests
-<describe unit tests needed for the feature>
+## Git & Branch Strategy
 
-### Integration Tests
-<describe integration tests needed for the feature>
+- Base branch: `develop`
+- Working branch: `feature/<issue-number>-<slug>`
+- Commands:
+  - `git checkout develop && git pull origin develop`
+  - `git checkout -b feature/<issue-number>-<slug>`
+- Commit strategy: Conventional Commit messages referencing the issue (`feat(handlers): add dashboard filters (#<issue-number>)`).
 
-### Edge Cases
-<list edge cases that need to be tested>
+## Phased Implementation Plan
 
-## Acceptance Criteria
-<list specific, measurable criteria that must be met for the feature to be considered complete>
+IMPORTANT: Execute every phase in order, top to bottom.
+
+<use h3 sections per phase with bullet tasks, including git checkpoints (`git status`, `git add`), interim commits, branch pushes, and PR preparation steps.>
+
+## Testing & QA Strategy
+
+<list automated tests (if applicable), static analysis, manual QA scenarios, observability updates>
 
 ## Validation Commands
-Execute every command to validate the feature works correctly with zero regressions.
 
-<list commands you'll use to validate with 100% confidence the feature is implemented correctly with zero regressions. every command must execute without errors so be specific about what you want to run to validate the feature works as expected. Include commands to test the feature end-to-end.>
+<commands to verify correctness end-to-end>
 - `npm run lint`
 - `npm run typecheck`
 - `npm run build`
-- `npm run health`
+- `npm test` (if tests exist)
+- Manual MCP tool invocation examples
+- Health check: `curl http://localhost:8084/health`
+
+## Release & Follow-Up
+
+<deployment considerations, documentation updates (`docs/handlers/`, `README.md`), analytics/telemetry, post-launch review items>
 
 ## Notes
-<optionally list any additional notes, future considerations, or context that are relevant to the feature that will be helpful to the developer>
+
+<optional references, open questions, stakeholder callouts>
 ```
 
 ## Feature

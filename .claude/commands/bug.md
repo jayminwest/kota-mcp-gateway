@@ -1,71 +1,101 @@
 # Bug Planning
 
-Create a new plan in `docs/specs/*.md` to resolve the `Bug` using the exact specified markdown `Plan Format`. Follow the `Instructions` to create the plan and use the `Relevant Files` guidance to focus on the right areas of the KOTA MCP Gateway.
+Create a new plan in `docs/specs/*.md` to resolve the bug with the minimal, root-cause-focused change set. Embed the issue number in the filename (e.g., `docs/specs/bug-1234-missing-subscription.md`).
+
+## Pre-Plan Git/GitHub Checklist
+
+1. `git fetch --all --prune`
+2. `git status --short` (must be clean)
+3. `gh issue view <issue-number>` – capture summary, labels, assignees, blockers
+4. Note existing branches/PRs tied to the issue: `gh pr list --search "#<issue-number>"`
 
 ## Instructions
-- IMPORTANT: You're writing a plan to resolve a bug based on the provided `Bug` that will improve the gateway.
-- IMPORTANT: The `Bug` describes the issue to be resolved. Do **not** implement the fix now; craft the plan using the `Plan Format` below.
+
+- Investigate starting from `README.md` and linked documentation.
+- Keep scope constrained to fixing the bug documented in issue #<number>.
+- Reference the issue explicitly in the plan intro.
+- Use KOTA conventions: `npm` package manager, TypeScript, Express + MCP architecture.
+- Document any new tool/library usage in **Notes** section.
+- IMPORTANT: You're writing a plan to resolve a bug. Do **not** implement the fix now; craft the plan using the `Plan Format` below.
 - Research the codebase to understand the regression: start with `README.md`, then explore `docs/specs/` (if present), `docs/handlers/`, `docs/webhooks/`, and supporting scripts.
 - Be thorough and precise so we fix the root cause and prevent regressions while keeping changes focused.
-- Create the plan file under `docs/specs/`, naming it to match the bug. Create the folder if it does not yet exist.
+- Create the plan file under `docs/specs/`, naming it to match the bug with issue number. Create the folder if it does not yet exist.
 - Use the plan format exactly as provided; replace every `<placeholder>` with real content.
 - THINK HARD about the bug, its root cause, and the minimal fix.
 - Avoid unnecessary scope creep. Keep the solution surgical.
-- If a new library is required, note it in the `Notes` section (use `npm` commands and document them).
-- Respect the requested files in the `Relevant Files` section.
-- Start your investigation by reading `README.md`.
 
 ## Relevant Files
-Focus on the following files and directories when preparing the plan:
-- `README.md` – project overview, setup, and architecture notes.
-- `src/**` – Express server, MCP handlers, routes, and utilities.
-- `docs/handlers/**` – service-specific behavior and expectations.
-- `docs/webhooks/**` – webhook ingestion flow documentation.
-- `docs/specs/**` – existing specs and plans (extend this set).
-- `scripts/**` – helper scripts used during debugging or validation.
-- `public/kwc/**` – Kendama UI assets if the bug touches the KWC surfaces.
 
-Ignore directories not listed above unless the bug explicitly depends on them.
+Focus primarily on:
+
+- `src/**` – Express server, MCP handlers, routes, and utilities
+- `docs/handlers/**` – service-specific behavior and expectations
+- `docs/webhooks/**` – webhook ingestion flow documentation
+- `docs/specs/**` – existing specs and plans (extend this set)
+- `scripts/**` – helper scripts used during debugging or validation
+- `public/kwc/**` – Kendama UI assets if the bug touches the KWC surfaces
+- `README.md` – project overview, setup, and architecture notes
+
+Expand scope only if the issue evidence requires it.
 
 ## Plan Format
 ```md
-# Bug: <bug name>
+# Bug: <bug name> (Issue #<number>)
 
 ## Bug Description
+
 <describe the bug in detail, including symptoms and expected vs actual behavior>
 
 ## Problem Statement
+
 <clearly define the specific problem that needs to be solved>
 
 ## Solution Statement
+
 <describe the proposed solution approach to fix the bug>
 
 ## Steps to Reproduce
+
 <list exact steps to reproduce the bug>
 
 ## Root Cause Analysis
+
 <analyze and explain the root cause of the bug>
 
 ## Relevant Files
+
 Use these files to fix the bug:
 
-<find and list the files that are relevant to the bug describe why they are relevant in bullet points. If there are new files that need to be created to fix the bug, list them in an h3 'New Files' section.>
+<find and list the files that are relevant to the bug and describe why they are relevant in bullet points. If new files are required, add them in an h3 'New Files' section.>
+
+## Git & Branch Strategy
+
+- Base branch: `develop`
+- Working branch: `bug/<issue-number>-<slug>`
+- Commands:
+  - `git checkout develop && git pull origin develop`
+  - `git checkout -b bug/<issue-number>-<slug>`
+  - Plan commits using Conventional Commits referencing the issue (e.g., `fix(handlers): adjust subscription check (#<issue-number>)`).
 
 ## Step by Step Tasks
+
 IMPORTANT: Execute every step in order, top to bottom.
 
-<list step by step tasks as h3 headers plus bullet points. use as many h3 headers as needed to fix the bug. Order matters, start with the foundational shared changes required to fix the bug then move on to the specific changes required to fix the bug. Include tests that will validate the bug is fixed with zero regressions. Your last step should be running the `Validation Commands` to validate the bug is fixed with zero regressions.>
+<list step-by-step tasks as h3 headers plus bullet points. Include checkpoints for `git status`, `git add`, interim commits, and pushing to origin. The final step must run the Validation Commands and prepare the PR (`gh pr create --base develop --head bug/<issue-number>-<slug>` if applicable).>
 
 ## Validation Commands
-Execute every command to validate the bug is fixed with zero regressions.
 
-<list commands you'll use to validate with 100% confidence the bug is fixed with zero regressions. every command must execute without errors so be specific about what you want to run to validate the bug is fixed with zero regressions. Include commands to reproduce the bug before and after the fix.>
+Execute every command to prove the bug is fixed with zero regressions.
+
+<list all commands needed for validation. Include a command to demonstrate the bug before and after the fix when possible.>
 - `npm run lint`
 - `npm run typecheck`
 - `npm run build`
+- `npm test` (if tests exist)
 
 ## Notes
-<optionally list any additional notes or context that are relevant to the bug that will be helpful to the developer>
+
+<optionally list additional context (linked issues/PRs, tools installed, open questions).>
 ```
 
 ## Bug
