@@ -20,6 +20,7 @@ import { SlackHandler } from './handlers/slack.js';
 import { GitHubHandler } from './handlers/github.js';
 import { StripeHandler } from './handlers/stripe.js';
 import { MemoryHandler } from './handlers/memory.js';
+import { ContextSnapshotHandler } from './handlers/context-snapshot.js';
 import { DailyHandler } from './handlers/daily.js';
 import { ContentCalendarHandler } from './handlers/content-calendar.js';
 import { ToolkitHandler } from './handlers/toolkit.js';
@@ -301,6 +302,8 @@ async function main() {
       expiry_date: tokens?.expiry_date,
       scope: tokens?.scope,
       has_refresh_token: Boolean(tokens?.refresh_token),
+      refresh_token_expiry_date: tokens?.refresh_token_expiry_date,
+      updated_at: tokens?.updated_at,
     });
   }));
 
@@ -534,6 +537,13 @@ async function main() {
       autoEnable: true,
       factory: make(DailyHandler),
       tags: ['core', 'health'],
+    },
+    {
+      key: 'context_snapshot',
+      description: 'Context snapshots aggregated from the iOS shortcut webhook',
+      autoEnable: true,
+      factory: make(ContextSnapshotHandler),
+      tags: ['core', 'automation'],
     },
     {
       key: 'kwc',

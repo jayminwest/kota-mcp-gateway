@@ -7,6 +7,7 @@ Handlers Index
 - Google (Gmail + Calendar): GOOGLE.md
 - KOTA Memory System: MEMORY.md
 - Daily Logs: DAILY.md
+- Context Snapshots: CONTEXT_SNAPSHOT.md
 - Content Calendar: CONTENT_CALENDAR.md
 - GitHub: GITHUB.md (enable via bundle `github`)
 - Stripe: STRIPE.md (enable via bundle `stripe`)

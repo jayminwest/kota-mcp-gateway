@@ -62,6 +62,7 @@ const ConfigSchema = z.object({
   SLACK_USER_TOKEN_EXPIRES_AT: z.coerce.number().optional(),
   SLACK_TEAM_ID: z.string().optional(),
   SLACK_TEAM_NAME: z.string().optional(),
+  SLACK_DEFAULT_CHANNEL: z.string().min(1).optional().default('D098X745TDY'),
 
   SPOTIFY_CLIENT_ID: z.string().optional(),
   SPOTIFY_CLIENT_SECRET: z.string().optional(),

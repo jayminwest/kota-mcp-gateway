@@ -21,6 +21,18 @@ const pacificOffsetFormatter = new Intl.DateTimeFormat('en-US', {
   hourCycle: 'h23',
 });
 
+const pacificReadableFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: PACIFIC_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+  timeZoneName: 'short',
+});
+
 function formatPacificOffset(date: Date): string {
   const parts = pacificOffsetFormatter.formatToParts(date);
   const raw = parts.find(part => part.type === 'timeZoneName')?.value ?? 'GMT-00:00';
@@ -50,6 +62,22 @@ function formatPacificIso(date: Date): string {
   return `${year}-${month}-${day}T${hour}:${minute}:${second}.${fractional}${formatPacificOffset(date)}`;
 }
 
+function formatPacificReadable(date: Date): string {
+  const parts = pacificReadableFormatter.formatToParts(date);
+  const lookup = (type: Intl.DateTimeFormatPart['type']): string =>
+    parts.find(part => part.type === type)?.value ?? '';
+
+  const year = lookup('year');
+  const month = lookup('month');
+  const day = lookup('day');
+  const hour = lookup('hour');
+  const minute = lookup('minute');
+  const second = lookup('second');
+  const timeZone = lookup('timeZoneName') || 'PT';
+
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${timeZone}`;
+}
+
 function parseDateInput(value: Date | string | number): Date {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) throw new Error('Invalid date input');
@@ -73,10 +101,23 @@ export function toPacificIso(value: Date | string | number): string {
   return formatPacificIso(parseDateInput(value));
 }
 
+export function toPacificReadable(value: Date | string | number): string {
+  return formatPacificReadable(parseDateInput(value));
+}
+
 export function ensurePacificIso(value?: Date | string | number | null): string | undefined {
   if (value === undefined || value === null) return undefined;
   try {
     return toPacificIso(value);
+  } catch {
+    return undefined;
+  }
+}
+
+export function ensurePacificReadable(value?: Date | string | number | null): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  try {
+    return toPacificReadable(value);
   } catch {
     return undefined;
   }

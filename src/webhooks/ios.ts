@@ -1,6 +1,8 @@
 import type { Router } from 'express';
+import { z } from 'zod';
 import { BaseWebhook, type WebhookContext, type WebhookProcessResult } from './base.js';
 import { toPacificDate } from '../utils/time.js';
+import { ContextSnapshotService, type ContextSnapshotRecord } from '../utils/context-snapshots.js';
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -31,8 +33,45 @@ function resolveDate(payload: ManualPayload): string {
   return value;
 }
 
+const ContextSnapshotSchema = z
+  .object({
+    timestamp: z.union([z.string(), z.number(), z.date()]),
+    location: z.any().optional(),
+    weather: z.any().optional(),
+  })
+  .passthrough();
+
+type ContextSnapshotWebhookPayload = z.infer<typeof ContextSnapshotSchema>;
+
+function parseContextSnapshotPayload(ctx: WebhookContext): ContextSnapshotWebhookPayload {
+  const payload = ctx.payload;
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid payload');
+  }
+  const parsed = ContextSnapshotSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(`Invalid context snapshot payload: ${parsed.error.message}`);
+  }
+  return parsed.data;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 export class IOSWebhook extends BaseWebhook {
   readonly source = 'ios';
+  private readonly contextSnapshots: ContextSnapshotService;
+
+  constructor(opts: ConstructorParameters<typeof BaseWebhook>[0]) {
+    super(opts);
+    this.contextSnapshots = new ContextSnapshotService({
+      config: opts.config,
+      logger: opts.logger.child({ component: 'context-snapshot-service' }),
+    });
+  }
 
   protected setupRoutes(router: Router): void {
     const requireSignature = Boolean(this.settings.secret);
@@ -54,6 +93,13 @@ export class IOSWebhook extends BaseWebhook {
 
     this.registerEndpoint(router, 'post', '/ios/food', this.handleFood.bind(this), {
       eventType: 'food',
+      requireSignature,
+      requireAuthToken,
+      extractEventId: payload => payload?.id?.toString(),
+    });
+
+    this.registerEndpoint(router, 'post', '/ios/context-snapshot', this.handleContextSnapshot.bind(this), {
+      eventType: 'context_snapshot',
       requireSignature,
       requireAuthToken,
       extractEventId: payload => payload?.id?.toString(),
@@ -125,5 +171,42 @@ export class IOSWebhook extends BaseWebhook {
       ],
       dedupeKey: ctx.payload?.id?.toString(),
     };
+  }
+
+  private async handleContextSnapshot(ctx: WebhookContext): Promise<WebhookProcessResult> {
+    const parsed = parseContextSnapshotPayload(ctx);
+    const { timestamp, location, weather, ...rest } = parsed as Record<string, unknown>;
+
+    const extras = Object.keys(rest).length ? rest : undefined;
+    const snapshot = await this.contextSnapshots.collect({
+      timestamp: timestamp as string | number | Date,
+      location: isPlainObject(location) ? (location as Record<string, unknown>) : null,
+      weather: isPlainObject(weather) ? (weather as Record<string, unknown>) : null,
+      extras: extras && isPlainObject(extras) ? (extras as Record<string, unknown>) : extras,
+      raw: isPlainObject(ctx.payload) ? (ctx.payload as Record<string, unknown>) : undefined,
+    });
+
+    await this.contextSnapshots.append(snapshot);
+
+    const snapshotDate = this.resolveSnapshotDate(snapshot);
+
+    return {
+      date: snapshotDate,
+      metadata: {
+        contextSnapshot: true,
+        errors: snapshot.errors,
+      },
+      responseBody: { status: 'ok', snapshot },
+      skipStore: true,
+      statusCode: 200,
+    };
+  }
+
+  private resolveSnapshotDate(snapshot: ContextSnapshotRecord): string {
+    try {
+      return toPacificDate(snapshot.capturedAt);
+    } catch {
+      return toPacificDate(new Date());
+    }
   }
 }

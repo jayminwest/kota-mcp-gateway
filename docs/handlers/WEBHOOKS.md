@@ -58,5 +58,6 @@ Expose stored webhook deliveries (WHOOP, iOS Shortcuts, etc.) to MCP clients. Ea
 - Keep `limit` small (default 20) to preserve the assistant’s context window. Increase in small increments if needed.
 - For WHOOP deliveries, the `source` is `whoop` with `eventType` values like `sleep`, `recovery`, or `workout`.
 - iOS Shortcuts deliveries appear under `source: "ios"` with event types matching the endpoint (`note`, `activity`, `food`).
+- The `context_snapshot` Shortcut posts to `/webhooks/ios/context-snapshot`; snapshots are stored under `data/context-snapshots/` and surfaced via the `context_get_recent` MCP tool.
 - Raw files remain on the server; the handler is read-only and does not modify the stored JSON.
 - Incoming events are normalized automatically: duplicate deliveries (based on dedupe key + archive) are skipped, entry times are reduced to `HH:mm`, and time-of-day tags (`morning`/`afternoon`/`evening`/`night`) are appended. Standardized templates (`activity_event`, `nutrition_event`, `context_event`) are written to entry metadata for downstream analysis.

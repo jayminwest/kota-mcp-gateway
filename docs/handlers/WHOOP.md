@@ -29,17 +29,18 @@ API Base URL (v2)
 
 Notes on tokens
 - WHOOP’s public API uses OAuth2. The gateway supports full OAuth including refresh.
-- The OAuth flow forces consent and offline access so WHOOP returns a `refresh_token`. Access tokens typically last ~1 hour and will auto‑refresh when a `refresh_token` is present.
+- The OAuth flow forces consent and requests the `offline` scope so WHOOP returns a `refresh_token`. Access tokens typically last ~1 hour and will auto‑refresh when a `refresh_token` is present.
+- Token storage tracks `expiry_date`, `refresh_token_expiry_date`, and `updated_at` so you can monitor when a refresh or re-auth is required.
 - If you only set `WHOOP_API_KEY`, that token is usually short‑lived and will expire; prefer the OAuth flow below.
 
 OAuth flow (recommended)
 - Set `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `.env` (and optionally `WHOOP_REDIRECT_URI`).
 - Start auth in a browser: `http://localhost:8084/auth/whoop/start`
   - You’ll be prompted to consent. The gateway requests the scopes:
-    `read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles`
+    `offline read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles`
 - After redirect back to the gateway, tokens are stored at `./data/whoop/tokens.json`.
 - Verify auth: `curl http://localhost:8084/auth/whoop/status`
-  - Response includes `{ authenticated, profile, token_type, expiry_date, scope }`
+  - Response includes `{ authenticated, profile, token_type, expiry_date, refresh_token_expiry_date, scope, updated_at }`
   - If a `refresh_token` was issued, the server refreshes automatically when near expiry.
 
 Re‑auth steps
@@ -47,7 +48,7 @@ Re‑auth steps
   1) Ensure `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` are set in `.env`.
   2) (Optional) Delete `./data/whoop/tokens.json` to force a clean slate.
   3) Visit `http://localhost:8084/auth/whoop/start` again.
-  4) Accept consent when prompted (the gateway forces `prompt=consent` and `access_type=offline` to obtain a refresh token).
+  4) Accept consent when prompted. The gateway requests the `offline` scope to obtain a refresh token.
   5) Check `GET /auth/whoop/status` to confirm `has_refresh_token: true`.
   - If needed, remove `./data/whoop/tokens.json` and repeat to force a clean re‑auth.
 

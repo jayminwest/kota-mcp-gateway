@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BaseHandler } from './base.js';
 import type { ToolSpec } from '../types/index.js';
 import { getSlackUserToken, slackApi, loadSlackTokens } from '../utils/slack.js';
-import { ensurePacificIso, toPacificIso } from '../utils/time.js';
+import { ensurePacificReadable, toPacificIso, toPacificReadable } from '../utils/time.js';
 
 const ConversationType = z.enum(['public_channel', 'private_channel', 'im', 'mpim']);
 
@@ -15,7 +15,7 @@ const ListConversationsSchema = z.object({
 }).strip();
 
 const GetMessagesSchema = z.object({
-  channel: z.string().describe('Conversation ID (channel, group, or DM)'),
+  channel: z.string().optional().describe('Conversation ID (channel, group, or DM). Defaults to configured channel when omitted'),
   limit: z.coerce.number().int().positive().max(200).optional().describe('Max messages (default 50)'),
   cursor: z.string().optional().describe('Pagination cursor from previous call'),
   oldest: z.string().optional().describe('Oldest timestamp (Unix seconds or ISO). Inclusive unless inclusive=false'),
@@ -104,8 +104,12 @@ export class SlackHandler extends BaseHandler {
   private async getMessages(args: unknown): Promise<CallToolResult> {
     const parsed = this.parseArgs(GetMessagesSchema, args);
     const token = await getSlackUserToken(this.config, this.logger);
+    const channelId = parsed.channel ?? this.config.SLACK_DEFAULT_CHANNEL;
+    if (!channelId) {
+      throw new Error('Slack channel is required. Provide a channel or configure SLACK_DEFAULT_CHANNEL.');
+    }
     const payload: Record<string, any> = {
-      channel: parsed.channel,
+      channel: channelId,
       limit: parsed.limit ?? 50,
       inclusive: parsed.inclusive ?? true,
     };
@@ -123,18 +127,180 @@ export class SlackHandler extends BaseHandler {
         messages = messages.filter((m: any) => m.user === selfId);
       }
     }
-    const normalizedMessages = messages.map((message: any) => ({
-      ...message,
-      ts_pacific: this.formatSlackTimestamp(message.ts),
-      thread_ts_pacific: this.formatSlackTimestamp(message.thread_ts),
-      edited_at_pacific: this.formatSlackTimestamp(message.edited?.ts),
-    }));
+    const simplifiedMessages = await this.summarizeMessages(token, messages);
     const result = {
-      messages: normalizedMessages,
+      messages: simplifiedMessages,
       next_cursor: data.response_metadata?.next_cursor || null,
       has_more: data.has_more || false,
     };
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+
+  private async summarizeMessages(
+    token: string,
+    messages: any[],
+  ): Promise<Array<{ timestamp: string; sender: string; content: string }>> {
+    if (!messages.length) return [];
+    const userNames = await this.buildUserNameMap(token, messages);
+    return messages.map((message: any) => {
+      const timestamp = this.formatSlackTimestamp(message.ts) ?? message.ts;
+      const sender = this.resolveSenderName(message, userNames);
+      const content = this.buildMessageContent(message, userNames) || '[no text]';
+      return { timestamp, sender, content };
+    });
+  }
+
+  private async buildUserNameMap(token: string, messages: any[]): Promise<Record<string, string>> {
+    const names: Record<string, string> = {};
+    const pending = new Set<string>();
+
+    for (const message of messages) {
+      const userId = typeof message.user === 'string' ? message.user : undefined;
+      if (!userId) continue;
+      const profileName = this.getProfileDisplayName(message.user_profile);
+      if (profileName) {
+        names[userId] = profileName;
+        continue;
+      }
+      if (!names[userId]) {
+        pending.add(userId);
+      }
+    }
+
+    for (const userId of pending) {
+      try {
+        const data = await slackApi(token, 'users.info', { user: userId });
+        const profileName =
+          this.getProfileDisplayName(data.user?.profile) ||
+          (typeof data.user?.name === 'string' ? data.user.name : undefined);
+        if (profileName) {
+          names[userId] = profileName;
+        } else {
+          names[userId] = userId;
+        }
+      } catch (err: any) {
+        this.logger.debug({ err: err?.message || err, userId }, 'Failed to fetch Slack user info');
+        names[userId] = userId;
+      }
+    }
+
+    return names;
+  }
+
+  private getProfileDisplayName(profile?: any): string | undefined {
+    if (!profile) return undefined;
+    if (typeof profile.display_name === 'string' && profile.display_name.trim()) {
+      return profile.display_name.trim();
+    }
+    if (typeof profile.real_name === 'string' && profile.real_name.trim()) {
+      return profile.real_name.trim();
+    }
+    return undefined;
+  }
+
+  private resolveSenderName(message: any, userNames: Record<string, string>): string {
+    const profileName = this.getProfileDisplayName(message.user_profile);
+    if (profileName) return profileName;
+    const userId = typeof message.user === 'string' ? message.user : undefined;
+    if (userId && userNames[userId]) return userNames[userId];
+    if (typeof message.username === 'string' && message.username.trim()) return message.username.trim();
+    if (message.bot_profile?.name) return String(message.bot_profile.name);
+    if (userId) return userId;
+    if (typeof message.bot_id === 'string') return `Bot ${message.bot_id}`;
+    return 'Unknown';
+  }
+
+  private buildMessageContent(message: any, userNames: Record<string, string>): string {
+    const parts: string[] = [];
+    if (typeof message.text === 'string' && message.text.trim()) {
+      parts.push(this.decodeSlackFormatting(message.text.trim(), userNames));
+    }
+
+    if (Array.isArray(message.blocks)) {
+      const blockTexts = this.extractBlockText(message.blocks)
+        .map((text) => this.decodeSlackFormatting(text, userNames))
+        .filter((text) => !!text.trim());
+      if (blockTexts.length) {
+        parts.push(blockTexts.join('\n'));
+      }
+    }
+
+    if (Array.isArray(message.attachments)) {
+      const attachmentSummaries = message.attachments
+        .map((att: any): string | undefined => {
+          const candidate = att?.fallback ?? att?.text ?? att?.title;
+          return typeof candidate === 'string' ? candidate : undefined;
+        })
+        .filter((value: string | undefined): value is string => typeof value === 'string' && value.trim().length > 0)
+        .map((value: string) => this.decodeSlackFormatting(value.trim(), userNames));
+      if (attachmentSummaries.length) {
+        parts.push(`Attachments: ${attachmentSummaries.join(' | ')}`);
+      }
+    }
+
+    if (Array.isArray(message.files)) {
+      const fileSummaries = message.files
+        .map((file: any): string | undefined => {
+          const candidate = file?.title ?? file?.name;
+          return typeof candidate === 'string' ? candidate : undefined;
+        })
+        .filter((value: string | undefined): value is string => typeof value === 'string' && value.trim().length > 0);
+      if (fileSummaries.length) {
+        parts.push(`Files: ${fileSummaries.join(', ')}`);
+      }
+    }
+
+    if (message.thread_ts && message.thread_ts !== message.ts) {
+      const parentTs = this.formatSlackTimestamp(message.thread_ts) ?? message.thread_ts;
+      parts.push(`(reply in thread ${parentTs})`);
+    }
+
+    const combined = parts.map((part) => part.trim()).filter(Boolean).join('\n').trim();
+    if (combined) return combined;
+    if (typeof message.subtype === 'string' && message.subtype.trim()) {
+      return message.subtype.trim();
+    }
+    return '';
+  }
+
+  private extractBlockText(blocks: any[]): string[] {
+    const texts: string[] = [];
+    for (const block of blocks) {
+      const blockText = block?.text?.text;
+      if (typeof blockText === 'string' && blockText.trim()) {
+        texts.push(blockText.trim());
+      }
+      if (Array.isArray(block?.elements)) {
+        for (const element of block.elements) {
+          if (typeof element?.text === 'string' && element.text.trim()) {
+            texts.push(element.text.trim());
+          }
+          if (Array.isArray(element?.elements)) {
+            for (const inner of element.elements) {
+              if (typeof inner?.text === 'string' && inner.text.trim()) {
+                texts.push(inner.text.trim());
+              }
+            }
+          }
+        }
+      }
+    }
+    return texts;
+  }
+
+  private decodeSlackFormatting(text: string, userNames: Record<string, string>): string {
+    if (!text) return '';
+    let result = text;
+    result = result.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    result = result.replace(/<@([A-Z0-9]+)>/gi, (_match, userId: string) => {
+      const name = userNames[userId];
+      return name ? `@${name}` : `@${userId}`;
+    });
+    result = result.replace(/<#([A-Z0-9]+)\|([^>]+)>/gi, (_match, _channelId: string, channelName: string) => `#${channelName}`);
+    result = result.replace(/<!([^>]+)>/gi, (_match, keyword: string) => `@${keyword}`);
+    result = result.replace(/<([^|<>]+)\|([^<>]+)>/g, (_match, url: string, label: string) => `${label} (${url})`);
+    result = result.replace(/<([^<>]+)>/g, (_match, value: string) => value);
+    return result;
   }
 
   private toSlackTimestamp(value?: string) {
@@ -151,10 +317,10 @@ export class SlackHandler extends BaseHandler {
     if (/^\d+(\.\d+)?$/.test(value)) {
       const seconds = Number(value);
       if (!Number.isNaN(seconds)) {
-        return toPacificIso(seconds * 1000);
+        return toPacificReadable(seconds * 1000);
       }
     }
-    return ensurePacificIso(value) ?? undefined;
+    return ensurePacificReadable(value) ?? undefined;
   }
 
   private formatUnixTimestamp(value?: number): string | undefined {

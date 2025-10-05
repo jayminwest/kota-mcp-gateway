@@ -15,7 +15,14 @@ export type WhoopTokens = {
   expires_in?: number;
   expiry_date?: number; // ms since epoch
   refresh_token?: string;
+  refresh_token_expires_in?: number;
+  refresh_token_expiry_date?: number; // ms since epoch
+  updated_at?: string;
 };
+
+const REFRESH_SCOPE = 'offline';
+const EXPIRY_MARGIN_MS = 60_000; // 60s for access token refresh checks
+const REFRESH_MARGIN_MS = 5 * 60_000; // 5 minutes for refresh token expiry checks
 
 function tokensPath(config: AppConfig) {
   const dir = path.resolve(config.DATA_DIR, 'whoop');
@@ -42,6 +49,37 @@ export async function saveWhoopTokens(config: AppConfig, tokens: WhoopTokens) {
   await fs.writeFile(file, JSON.stringify(tokens, null, 2), 'utf8');
 }
 
+function mergeWhoopTokens(existing: WhoopTokens | null | undefined, incoming: WhoopTokens): WhoopTokens {
+  const now = Date.now();
+  const base: WhoopTokens = { ...(existing ?? {}), ...incoming };
+  if (!incoming.refresh_token && existing?.refresh_token) base.refresh_token = existing.refresh_token;
+  if (!incoming.scope && existing?.scope) base.scope = existing.scope;
+  if (!incoming.token_type && existing?.token_type) base.token_type = existing.token_type;
+  if (!incoming.expires_in && existing?.expires_in) base.expires_in = existing.expires_in;
+  if (!incoming.refresh_token_expires_in && existing?.refresh_token_expires_in) {
+    base.refresh_token_expires_in = existing.refresh_token_expires_in;
+  }
+  if (!incoming.refresh_token_expiry_date && existing?.refresh_token_expiry_date) {
+    base.refresh_token_expiry_date = existing.refresh_token_expiry_date;
+  }
+  if (!incoming.expiry_date && existing?.expiry_date) base.expiry_date = existing.expiry_date;
+
+  const computed: WhoopTokens = { ...base, updated_at: new Date(now).toISOString() };
+  if (typeof incoming.expires_in === 'number') {
+    computed.expiry_date = now + incoming.expires_in * 1000;
+  }
+  if (typeof incoming.refresh_token_expires_in === 'number') {
+    computed.refresh_token_expiry_date = now + incoming.refresh_token_expires_in * 1000;
+  }
+  return computed;
+}
+
+async function persistWhoopTokens(config: AppConfig, incoming: WhoopTokens, existing?: WhoopTokens | null): Promise<WhoopTokens> {
+  const merged = mergeWhoopTokens(existing ?? (await loadWhoopTokens(config)), incoming);
+  await saveWhoopTokens(config, merged);
+  return merged;
+}
+
 export function getWhoopRedirectUri(config: AppConfig) {
   return config.WHOOP_REDIRECT_URI || `http://localhost:${config.PORT}/auth/whoop/callback`;
 }
@@ -53,11 +91,11 @@ export function getWhoopAuthUrl(config: AppConfig, state?: string) {
     response_type: 'code',
     client_id: cid,
     redirect_uri: getWhoopRedirectUri(config),
-    // Request a refresh token (offline access) and force consent to ensure refresh_token is issued
-    // Note: Some OAuth providers ignore unknown params; WHOOP honors standard OAuth conventions.
+    // Request offline scope to receive refresh tokens and force consent for deterministic behavior
     access_type: 'offline',
     prompt: 'consent',
     scope: [
+      'offline',
       'read:profile',
       'read:body_measurement',
       'read:recovery',
@@ -71,7 +109,10 @@ export function getWhoopAuthUrl(config: AppConfig, state?: string) {
 }
 
 async function tokenRequest(config: AppConfig, body: URLSearchParams, method: 'basic' | 'post'): Promise<Response> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json',
+  };
   const cid = config.WHOOP_CLIENT_ID;
   const cs = config.WHOOP_CLIENT_SECRET;
   if (!cid || !cs) throw new Error('Missing WHOOP_CLIENT_ID/WHOOP_CLIENT_SECRET');
@@ -104,28 +145,28 @@ async function tokenRequestWithFallback(config: AppConfig, body: URLSearchParams
 export async function exchangeWhoopCode(config: AppConfig, code: string): Promise<WhoopTokens> {
   const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: getWhoopRedirectUri(config) });
   const tokens = await tokenRequestWithFallback(config, body);
-  if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
-  await saveWhoopTokens(config, tokens);
-  return tokens;
+  return persistWhoopTokens(config, tokens);
 }
 
-export async function refreshWhoopToken(config: AppConfig, refresh_token: string): Promise<WhoopTokens> {
+export async function refreshWhoopToken(config: AppConfig, refresh_token: string, existing?: WhoopTokens | null): Promise<WhoopTokens> {
+  const prior = existing ?? (await loadWhoopTokens(config));
   const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token });
+  const scope = prior?.scope || REFRESH_SCOPE;
+  if (scope) body.set('scope', scope);
   const tokens = await tokenRequestWithFallback(config, body);
-  if (tokens.expires_in) tokens.expiry_date = Date.now() + tokens.expires_in * 1000;
-  const existing = await loadWhoopTokens(config);
-  if (!tokens.refresh_token && existing?.refresh_token) tokens.refresh_token = existing.refresh_token;
-  await saveWhoopTokens(config, tokens);
-  return tokens;
+  return persistWhoopTokens(config, tokens, prior);
 }
 
-async function forceRefreshAccessToken(config: AppConfig): Promise<string> {
-  const current = await loadWhoopTokens(config);
+async function forceRefreshAccessToken(config: AppConfig, snapshot?: WhoopTokens | null): Promise<string> {
+  const current = snapshot ?? (await loadWhoopTokens(config));
   const refreshToken = current?.refresh_token;
   if (!refreshToken) {
     throw new Error('WHOOP refresh token missing. Re-authenticate to grant offline access.');
   }
-  const refreshed = await refreshWhoopToken(config, refreshToken);
+  if (current.refresh_token_expiry_date && current.refresh_token_expiry_date - REFRESH_MARGIN_MS <= Date.now()) {
+    throw new Error('WHOOP refresh token has expired. Re-authenticate to grant offline access.');
+  }
+  const refreshed = await refreshWhoopToken(config, refreshToken, current);
   return refreshed.access_token;
 }
 
@@ -135,16 +176,18 @@ async function ensureAccessToken(config: AppConfig): Promise<string> {
   // Else use stored OAuth tokens
   const current = await loadWhoopTokens(config);
   if (!current?.access_token) throw new Error('WHOOP not authenticated. Visit /auth/whoop/start');
-  const margin = 60_000; // 60s margin
   const expiry = current.expiry_date ?? 0;
-  const valid = expiry ? expiry - margin > Date.now() : true;
+  const valid = expiry ? expiry - EXPIRY_MARGIN_MS > Date.now() : true;
   if (valid) {
     return current.access_token;
   }
   if (!current.refresh_token) {
     throw new Error('WHOOP access token expired and no refresh token is available. Re-authenticate to grant offline access.');
   }
-  const refreshed = await refreshWhoopToken(config, current.refresh_token);
+  if (current.refresh_token_expiry_date && current.refresh_token_expiry_date - REFRESH_MARGIN_MS <= Date.now()) {
+    throw new Error('WHOOP refresh token has expired. Re-authenticate to grant offline access.');
+  }
+  const refreshed = await refreshWhoopToken(config, current.refresh_token, current);
   return refreshed.access_token;
 }
 
