@@ -20,23 +20,23 @@ const CreateTaskSchema = z.object({
 });
 
 const ClaimTaskSchema = z.object({
-  adw_id: z.string().min(1),
+  adw_id: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'ADW ID must contain only alphanumeric characters, hyphens, and underscores'),
   worktree: z.string().optional(),
 });
 
 const StartTaskSchema = z.object({
-  adw_id: z.string().min(1),
+  adw_id: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'ADW ID must contain only alphanumeric characters, hyphens, and underscores'),
 });
 
 const CompleteTaskSchema = z.object({
-  adw_id: z.string().min(1),
+  adw_id: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'ADW ID must contain only alphanumeric characters, hyphens, and underscores'),
   commit_hash: z.string().optional(),
   worktree: z.string().optional(),
   result: z.record(z.any()).optional(),
 });
 
 const FailTaskSchema = z.object({
-  adw_id: z.string().min(1),
+  adw_id: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'ADW ID must contain only alphanumeric characters, hyphens, and underscores'),
   error: z.string().min(1),
   worktree: z.string().optional(),
 });
@@ -84,7 +84,7 @@ export function createTasksRouter(opts: RouterOptions): Router {
   router.get(
     '/',
     asyncHandler(async (req, res) => {
-      const { status, limit, priority } = req.query;
+      const { status, limit, priority, offset } = req.query;
 
       let statusFilter: TaskStatus | TaskStatus[] | undefined;
 
@@ -100,6 +100,7 @@ export function createTasksRouter(opts: RouterOptions): Router {
         status: statusFilter,
         limit: limit ? parseInt(limit as string, 10) : undefined,
         priority: priority as any,
+        offset: offset ? parseInt(offset as string, 10) : undefined,
       };
 
       const tasks = await db.listTasks(filters);

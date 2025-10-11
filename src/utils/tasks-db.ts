@@ -65,6 +65,7 @@ export interface ListTasksFilters {
   status?: TaskStatus | TaskStatus[];
   priority?: TaskPriority;
   limit?: number;
+  offset?: number;
 }
 
 export class TasksDatabase {
@@ -128,7 +129,7 @@ export class TasksDatabase {
 
   async listTasks(filters: ListTasksFilters = {}): Promise<Task[]> {
     const db = this.ensureDb();
-    const { status, priority, limit = 10 } = filters;
+    const { status, priority, limit = 10, offset = 0 } = filters;
 
     let query = 'SELECT * FROM kota_tasks WHERE 1=1';
     const params: any[] = [];
@@ -149,8 +150,8 @@ export class TasksDatabase {
       params.push(priority);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(limit);
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
 
     const rows = await db.all(query, ...params);
     return rows.map(row => this.parseTask(row));
@@ -198,28 +199,28 @@ export class TasksDatabase {
 
   async claimTask(taskId: string, input: ClaimTaskInput): Promise<Task> {
     const db = this.ensureDb();
-    const task = await this.getTask(taskId);
-
-    if (!task) {
-      throw new Error('Task not found');
-    }
-
-    if (task.status !== 'pending') {
-      throw new Error(`Cannot claim task with status '${task.status}'`);
-    }
-
     const claimedAt = new Date().toISOString();
 
-    await db.run(
+    // Atomic update - only claim if status is 'pending'
+    const result = await db.run(
       `UPDATE kota_tasks
        SET status = ?, claimed_at = ?, adw_id = ?, worktree = COALESCE(?, worktree)
-       WHERE task_id = ?`,
+       WHERE task_id = ? AND status = 'pending'`,
       'claimed',
       claimedAt,
       input.adw_id,
       input.worktree,
       taskId
     );
+
+    // If no rows updated, task doesn't exist or is not in pending state
+    if (result.changes === 0) {
+      const task = await this.getTask(taskId);
+      if (!task) {
+        throw new Error('Task not found');
+      }
+      throw new Error(`Cannot claim task with status '${task.status}'`);
+    }
 
     const updatedTask = await this.getTask(taskId);
     if (!updatedTask) {
@@ -232,27 +233,31 @@ export class TasksDatabase {
 
   async startTask(taskId: string, input: StartTaskInput): Promise<Task> {
     const db = this.ensureDb();
-    const task = await this.getTask(taskId);
 
-    if (!task) {
-      throw new Error('Task not found');
-    }
-
-    if (task.status !== 'claimed') {
-      throw new Error(
-        `Cannot start task with status '${task.status}'. Must be claimed first.`
-      );
-    }
-
-    if (task.adw_id !== input.adw_id) {
-      throw new Error('ADW ID mismatch');
-    }
-
-    await db.run(
-      'UPDATE kota_tasks SET status = ? WHERE task_id = ?',
+    // Atomic update - only start if status is 'claimed' and adw_id matches
+    const result = await db.run(
+      `UPDATE kota_tasks
+       SET status = ?
+       WHERE task_id = ? AND status = 'claimed' AND adw_id = ?`,
       'in_progress',
-      taskId
+      taskId,
+      input.adw_id
     );
+
+    // If no rows updated, check why
+    if (result.changes === 0) {
+      const task = await this.getTask(taskId);
+      if (!task) {
+        throw new Error('Task not found');
+      }
+      if (task.adw_id !== input.adw_id) {
+        throw new Error('ADW ID mismatch');
+      }
+      if (task.status === 'completed' || task.status === 'failed') {
+        throw new Error(`Cannot start task with status '${task.status}' (task is already finished)`);
+      }
+      throw new Error(`Cannot start task with status '${task.status}'. Must be claimed first.`);
+    }
 
     const updatedTask = await this.getTask(taskId);
     if (!updatedTask) {
@@ -265,22 +270,6 @@ export class TasksDatabase {
 
   async completeTask(taskId: string, input: CompleteTaskInput): Promise<Task> {
     const db = this.ensureDb();
-    const task = await this.getTask(taskId);
-
-    if (!task) {
-      throw new Error('Task not found');
-    }
-
-    if (!['claimed', 'in_progress'].includes(task.status)) {
-      throw new Error(
-        `Cannot complete task with status '${task.status}'`
-      );
-    }
-
-    if (task.adw_id !== input.adw_id) {
-      throw new Error('ADW ID mismatch');
-    }
-
     const completedAt = new Date().toISOString();
     const result = input.result || {};
 
@@ -289,16 +278,33 @@ export class TasksDatabase {
       result.commit_hash = input.commit_hash;
     }
 
-    await db.run(
+    // Atomic update - only complete if status is claimed/in_progress and adw_id matches
+    const dbResult = await db.run(
       `UPDATE kota_tasks
        SET status = ?, completed_at = ?, result = ?, worktree = COALESCE(?, worktree)
-       WHERE task_id = ?`,
+       WHERE task_id = ? AND status IN ('claimed', 'in_progress') AND adw_id = ?`,
       'completed',
       completedAt,
       JSON.stringify(result),
       input.worktree,
-      taskId
+      taskId,
+      input.adw_id
     );
+
+    // If no rows updated, check why
+    if (dbResult.changes === 0) {
+      const task = await this.getTask(taskId);
+      if (!task) {
+        throw new Error('Task not found');
+      }
+      if (task.adw_id !== input.adw_id) {
+        throw new Error('ADW ID mismatch');
+      }
+      if (task.status === 'completed' || task.status === 'failed') {
+        throw new Error(`Cannot complete task with status '${task.status}' (task is already finished)`);
+      }
+      throw new Error(`Cannot complete task with status '${task.status}'`);
+    }
 
     const updatedTask = await this.getTask(taskId);
     if (!updatedTask) {

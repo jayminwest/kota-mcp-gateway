@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './utils/config.js';
@@ -187,12 +188,21 @@ async function main() {
   const allProjects = await loadProjects(config.DATA_DIR, logger);
   const enabledProjects = getEnabledProjects(allProjects);
 
+  // Rate limiter for task API endpoints
+  const tasksRateLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute window
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again later',
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  });
+
   for (const project of enabledProjects) {
     const db = new TasksDatabase(config.DATA_DIR, project.id, logger);
     await db.init();
 
-    // Register project-specific routes
-    app.use(`/api/tasks/${project.id}`, createTasksRouter({ db, logger }));
+    // Register project-specific routes with rate limiting
+    app.use(`/api/tasks/${project.id}`, tasksRateLimiter, createTasksRouter({ db, logger }));
 
     logger.info({ projectId: project.id, projectName: project.name }, 'Project tasks API registered');
   }
