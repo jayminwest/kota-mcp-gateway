@@ -35,6 +35,7 @@ Setup
 
 Endpoints
 - `GET /health` – returns `{ status: 'ok', ... }`
+- `GET /tasks` – Tasks Monitor web UI for managing ADW task queues
 - `GET /kwc` – Kendama run logger UI (lineup editor + run capture)
 - `GET /kwc/stats` – Kendama analytics dashboard (consistency + trends)
 - `GET /kwc/api/lineup` | `PUT /kwc/api/lineup` – manage Kendama lineup JSON

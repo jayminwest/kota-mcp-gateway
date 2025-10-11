@@ -146,6 +146,7 @@ async function main() {
   const app = express();
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const kwcPublicDir = path.resolve(moduleDir, '../public/kwc');
+  const tasksPublicDir = path.resolve(moduleDir, '../public/tasks');
 
   app.use(cors());
   app.get('/kwc', (req, res) => {
@@ -171,6 +172,27 @@ async function main() {
     });
   });
   app.use('/kwc', express.static(kwcPublicDir, { index: 'index.html', redirect: true }));
+  app.get('/tasks', (req, res) => {
+    res.sendFile(path.join(tasksPublicDir, 'index.html'), err => {
+      if (err) {
+        const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
+        ((req as any).log || logger).warn({ err }, 'Failed to serve Tasks monitor');
+        if (!res.headersSent) {
+          res.status(status).end();
+        }
+      }
+    });
+  });
+  app.use('/tasks', express.static(tasksPublicDir, {
+    index: 'index.html',
+    redirect: true,
+    etag: false,
+    lastModified: false,
+    maxAge: 0,
+    setHeaders: (res) => {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  }));
   app.use(express.json({
     limit: '4mb',
     verify: (req, _res, buf) => {
