@@ -271,12 +271,18 @@ export function createTasksRouter(opts: RouterOptions): Router {
           duration_seconds = Math.round((completedTime - claimedTime) / 1000);
         }
 
+        // Extract PR-related fields from result if present
+        const pr_url = task.result?.pr_url;
+        const pr_number = task.result?.pr_number;
+
         res.json({
           success: true,
           task_id: task.task_id,
           status: task.status,
           completed_at: task.completed_at,
           duration_seconds,
+          ...(pr_url && { pr_url }),
+          ...(pr_number && { pr_number }),
         });
       } catch (error: any) {
         if (error.message === 'Task not found') {
