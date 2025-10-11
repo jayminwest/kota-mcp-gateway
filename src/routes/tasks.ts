@@ -166,12 +166,12 @@ export function createTasksRouter(opts: RouterOptions): Router {
         const task = await db.claimTask(task_id, validation.data);
         logger.info({ task_id, adw_id: validation.data.adw_id }, 'Task claimed');
         res.json({
+          success: true,
           task_id: task.task_id,
-          title: task.title,
           status: task.status,
-          claimed_at: task.claimed_at,
           adw_id: task.adw_id,
           worktree: task.worktree,
+          claimed_at: task.claimed_at,
         });
       } catch (error: any) {
         if (error.message === 'Task not found') {
@@ -181,7 +181,7 @@ export function createTasksRouter(opts: RouterOptions): Router {
           const task = await db.getTask(task_id);
           return errorResponse(
             res,
-            400,
+            409,
             error.message,
             {
               task_id,
@@ -214,9 +214,10 @@ export function createTasksRouter(opts: RouterOptions): Router {
         const task = await db.startTask(task_id, validation.data);
         logger.info({ task_id, adw_id: validation.data.adw_id }, 'Task started');
         res.json({
+          success: true,
           task_id: task.task_id,
           status: task.status,
-          adw_id: task.adw_id,
+          started_at: task.claimed_at, // Using claimed_at as started_at since we don't have a separate field
         });
       } catch (error: any) {
         if (error.message === 'Task not found') {
@@ -261,13 +262,21 @@ export function createTasksRouter(opts: RouterOptions): Router {
       try {
         const task = await db.completeTask(task_id, validation.data);
         logger.info({ task_id, adw_id: validation.data.adw_id }, 'Task completed');
+
+        // Calculate duration if both timestamps exist
+        let duration_seconds: number | undefined;
+        if (task.completed_at && task.claimed_at) {
+          const completedTime = new Date(task.completed_at).getTime();
+          const claimedTime = new Date(task.claimed_at).getTime();
+          duration_seconds = Math.round((completedTime - claimedTime) / 1000);
+        }
+
         res.json({
+          success: true,
           task_id: task.task_id,
-          title: task.title,
           status: task.status,
           completed_at: task.completed_at,
-          adw_id: task.adw_id,
-          result: task.result,
+          duration_seconds,
         });
       } catch (error: any) {
         if (error.message === 'Task not found') {
@@ -313,11 +322,10 @@ export function createTasksRouter(opts: RouterOptions): Router {
         const task = await db.failTask(task_id, validation.data);
         logger.info({ task_id, adw_id: validation.data.adw_id, error: validation.data.error }, 'Task failed');
         res.json({
+          success: true,
           task_id: task.task_id,
-          title: task.title,
           status: task.status,
-          completed_at: task.completed_at,
-          adw_id: task.adw_id,
+          failed_at: task.completed_at, // Using completed_at as failed_at
           error: task.error,
         });
       } catch (error: any) {
