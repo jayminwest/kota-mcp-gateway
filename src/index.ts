@@ -172,7 +172,9 @@ async function main() {
     });
   });
   app.use('/kwc', express.static(kwcPublicDir, { index: 'index.html', redirect: true }));
-  app.get('/tasks', (req, res) => {
+
+  // Tasks Monitor routes - handle both /tasks and /tasks/ explicitly
+  const serveTasksIndex = (req: express.Request, res: express.Response) => {
     res.sendFile(path.join(tasksPublicDir, 'index.html'), err => {
       if (err) {
         const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
@@ -182,10 +184,14 @@ async function main() {
         }
       }
     });
-  });
+  };
+
+  app.get('/tasks', serveTasksIndex);
+  app.get('/tasks/', serveTasksIndex);
+
   app.use('/tasks', express.static(tasksPublicDir, {
-    index: 'index.html',
-    redirect: true,
+    index: false, // Don't auto-serve index.html - we handle it explicitly above
+    redirect: false,
     etag: false,
     lastModified: false,
     maxAge: 0,
