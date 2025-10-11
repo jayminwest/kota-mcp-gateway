@@ -32,6 +32,8 @@ import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handle
 import type { BaseHandler } from './handlers/base.js';
 import { KwcStore } from './utils/kwc-store.js';
 import { createKwcRouter, createKwcAnalyticsRouter } from './routes/kwc.js';
+import { createTasksRouter } from './routes/tasks.js';
+import { TasksDatabase } from './utils/tasks-db.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -179,6 +181,11 @@ async function main() {
   const kwcStore = new KwcStore(config, logger);
   app.use('/kwc/api/analytics', createKwcAnalyticsRouter({ store: kwcStore, logger }));
   app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
+
+  // Initialize Tasks Database and API
+  const tasksDb = new TasksDatabase(config.DATA_DIR, logger);
+  await tasksDb.init();
+  app.use('/api/kota-tasks', createTasksRouter({ db: tasksDb, logger }));
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
 
