@@ -33,6 +33,7 @@ Fetch tasks with optional filtering.
 **Query Parameters**:
 - `status` (string | string[]): Filter by status (pending, claimed, in_progress, completed, failed)
 - `limit` (number): Maximum tasks to return (default: 10)
+- `offset` (number): Number of tasks to skip for pagination (default: 0)
 - `priority` (string): Filter by priority (low, medium, high)
 
 **Examples**:
@@ -45,6 +46,9 @@ curl "${BASE_URL}?status=pending&priority=high&limit=5"
 
 # Get multiple statuses
 curl "${BASE_URL}?status=pending&status=claimed"
+
+# Pagination example
+curl "${BASE_URL}?status=pending&limit=10&offset=10"
 ```
 
 **Response**: `200 OK`
@@ -200,7 +204,7 @@ Claim a pending task for execution. This marks the task as `claimed` and associa
 ```
 
 **Required Fields**:
-- `adw_id` (string): Your ADW execution ID
+- `adw_id` (string): Your ADW execution ID (must contain only alphanumeric characters, hyphens, and underscores)
 
 **Optional Fields**:
 - `worktree` (string): Git worktree name for this task
@@ -567,6 +571,7 @@ All errors follow this format:
 - `400 Bad Request`: Invalid input or state transition
 - `403 Forbidden`: ADW ID mismatch
 - `404 Not Found`: Task doesn't exist
+- `429 Too Many Requests`: Rate limit exceeded
 - `500 Internal Server Error`: Server error
 
 ---
@@ -784,8 +789,13 @@ processTask();
 
 ## Rate Limiting
 
-Currently no rate limiting is enforced since the API is only accessible via Tailscale. However, to be a good citizen:
+The API enforces rate limiting to prevent abuse:
 
+- **Limit**: 100 requests per minute per IP address
+- **Headers**: Rate limit info returned in `RateLimit-*` headers
+- **Response**: `429 Too Many Requests` when limit exceeded
+
+Best practices:
 - Poll for tasks at reasonable intervals (e.g., every 30-60 seconds)
 - Don't claim tasks you can't execute immediately
 - Always mark tasks as completed or failed - don't leave them in `claimed` state

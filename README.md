@@ -6,21 +6,25 @@ Features
 - Single connection point for MCP clients
 - Dynamic tool registration via handlers
 - Webhook ingestion pipeline that maps external events into daily vitals
+- REST API for AI Developer Workflow (ADW) task management
 - Health endpoint at `/health`
 - Structured JSON logging with correlation IDs
 - Dockerized with persistent data volume
 - Webhook event storage with MCP tooling for historical review
+- Multi-project support for isolated task queues
 
 Project Structure
 - `src/index.ts` – main server and MCP transport
 - `src/handlers/*` – service handlers (Gmail, Calendar, Whoop, Kraken, Rize, Kasa, Slack)
   - Also: GitHub (activity summaries)
+- `src/routes/*` – REST API routers (Tasks API for ADWs, KWC)
 - `src/webhooks/*` – webhook handlers that append to the daily tracker
-- `src/utils/*` – config and logger
+- `src/utils/*` – config, logger, database utilities
 - `src/middleware/*` – error and optional auth middleware
 - `scripts/*` – healthcheck, webhook testing, and macOS launchd installer
-- `data/` – persistent data for tokens/config
+- `data/` – persistent data for tokens/config/databases
 - `docs/handlers` & `docs/webhooks` – per-integration guides
+- `docs/HOME_SERVER_API.md` & `docs/KOTADB_API_REFERENCE.md` – Tasks API documentation
 
 Setup
 1. Copy `.env.example` to `.env` and fill any required keys.
@@ -38,7 +42,8 @@ Endpoints
 - `PUT /kwc/api/runs/:recordedAt` – overwrite a run's attempts (fix mis-entered times)
 - `GET /kwc/api/analytics` – aggregate Kendama stats (query: `days`, `window`)
 - `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport
- - `GET /auth/github/status` – GitHub token and rate status
+- `GET /auth/github/status` – GitHub token and rate status
+- `/api/tasks/:project_id/*` – Task management API for AI Developer Workflows (see [docs/KOTADB_API_REFERENCE.md](docs/KOTADB_API_REFERENCE.md))
 
 MCP Client Config
 {

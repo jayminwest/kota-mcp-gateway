@@ -7,10 +7,29 @@ This document describes how to deploy and use the Home Server API for KotaDB AI 
 The Home Server API provides REST endpoints for managing tasks that can be claimed and executed by KotaDB ADWs. The API is accessed securely via Tailscale without requiring authentication.
 
 **Base URL**: `https://jaymins-mac-pro.tail1b7f44.ts.net`
-**API Prefix**: `/api/kota-tasks`
+**API Prefix**: `/api/tasks/:project_id` (e.g., `/api/tasks/kotadb`)
 **Authentication**: None (Tailscale network security)
 **Protocol**: HTTPS
 **Content-Type**: `application/json`
+
+## Recent Improvements
+
+The following critical improvements were implemented to ensure production-ready quality:
+
+### Concurrency Safety
+- **Atomic Database Operations**: All status transitions now use atomic `UPDATE ... WHERE` statements to prevent race conditions
+- **Claim Protection**: Multiple ADWs cannot claim the same task simultaneously
+- **ADW ID Verification**: All lifecycle endpoints verify ADW ownership atomically
+
+### Scalability
+- **Pagination Support**: Added `offset` parameter for efficient task list traversal
+- **Rate Limiting**: 100 requests/minute per IP to prevent abuse
+- **Indexed Queries**: Database indexes on status, priority, created_at, and adw_id
+
+### Input Validation
+- **ADW ID Format**: Enforced alphanumeric + hyphens/underscores pattern
+- **Zod Schemas**: Comprehensive validation for all request bodies
+- **Error Messages**: Clear, actionable error responses with proper HTTP status codes
 
 ## Quick Start
 
@@ -51,6 +70,7 @@ curl http://localhost:3000/api/kota-tasks
 Query parameters:
 - `status` (string | string[]): Filter by status (pending, claimed, in_progress, completed, failed)
 - `limit` (number): Maximum number of tasks to return (default: 10)
+- `offset` (number): Number of tasks to skip for pagination (default: 0)
 - `priority` (string): Filter by priority (low, medium, high)
 
 Examples:
@@ -63,6 +83,9 @@ curl "http://localhost:3000/api/kota-tasks?status=pending&status=claimed&limit=2
 
 # Filter by priority
 curl "http://localhost:3000/api/kota-tasks?status=pending&priority=high"
+
+# Pagination
+curl "http://localhost:3000/api/kota-tasks?status=pending&limit=10&offset=10"
 ```
 
 ### Get Task by ID
@@ -385,26 +408,29 @@ Tailscale automatically provides HTTPS certificates for your Tailnet. To enable 
 - All inputs are validated using Zod schemas
 - Title: 1-200 characters
 - Description: 1-5000 characters
-- Status transitions are enforced at the database layer
+- ADW ID: Must contain only alphanumeric characters, hyphens, and underscores
+- Status transitions are enforced at the database layer with atomic updates
 
-### Rate Limiting (Optional)
+### Rate Limiting
 
-To add rate limiting, install and configure express-rate-limit:
+Rate limiting is enabled by default:
 
-```bash
-npm install express-rate-limit
-```
+- **Limit**: 100 requests per minute per IP address
+- **Window**: 1 minute sliding window
+- **Headers**: Rate limit info in `RateLimit-*` headers
+- **Blocked Response**: `429 Too Many Requests`
 
-Then add to index.ts:
+Configuration in `src/index.ts`:
 ```typescript
-import rateLimit from 'express-rate-limit';
-
-const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
+const tasksRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute window
   max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-app.use('/api/kota-tasks', limiter);
+app.use(`/api/tasks/${project.id}`, tasksRateLimiter, createTasksRouter({ db, logger }));
 ```
 
 ## Environment Variables
