@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './utils/config.js';
@@ -32,6 +33,9 @@ import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handle
 import type { BaseHandler } from './handlers/base.js';
 import { KwcStore } from './utils/kwc-store.js';
 import { createKwcRouter, createKwcAnalyticsRouter } from './routes/kwc.js';
+import { createTasksRouter } from './routes/tasks.js';
+import { TasksDatabase } from './utils/tasks-db.js';
+import { loadProjects, getEnabledProjects } from './utils/projects-config.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -179,6 +183,29 @@ async function main() {
   const kwcStore = new KwcStore(config, logger);
   app.use('/kwc/api/analytics', createKwcAnalyticsRouter({ store: kwcStore, logger }));
   app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
+
+  // Initialize Tasks API with multi-project support
+  const allProjects = await loadProjects(config.DATA_DIR, logger);
+  const enabledProjects = getEnabledProjects(allProjects);
+
+  // Rate limiter for task API endpoints
+  const tasksRateLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute window
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again later',
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  });
+
+  for (const project of enabledProjects) {
+    const db = new TasksDatabase(config.DATA_DIR, project.id, logger);
+    await db.init();
+
+    // Register project-specific routes with rate limiting
+    app.use(`/api/tasks/${project.id}`, tasksRateLimiter, createTasksRouter({ db, logger }));
+
+    logger.info({ projectId: project.id, projectName: project.name }, 'Project tasks API registered');
+  }
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
 
