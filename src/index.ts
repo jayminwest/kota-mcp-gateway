@@ -34,6 +34,7 @@ import { KwcStore } from './utils/kwc-store.js';
 import { createKwcRouter, createKwcAnalyticsRouter } from './routes/kwc.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { TasksDatabase } from './utils/tasks-db.js';
+import { loadProjects, getEnabledProjects } from './utils/projects-config.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -182,10 +183,19 @@ async function main() {
   app.use('/kwc/api/analytics', createKwcAnalyticsRouter({ store: kwcStore, logger }));
   app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
 
-  // Initialize Tasks Database and API
-  const tasksDb = new TasksDatabase(config.DATA_DIR, logger);
-  await tasksDb.init();
-  app.use('/api/kota-tasks', createTasksRouter({ db: tasksDb, logger }));
+  // Initialize Tasks API with multi-project support
+  const allProjects = await loadProjects(config.DATA_DIR, logger);
+  const enabledProjects = getEnabledProjects(allProjects);
+
+  for (const project of enabledProjects) {
+    const db = new TasksDatabase(config.DATA_DIR, project.id, logger);
+    await db.init();
+
+    // Register project-specific routes
+    app.use(`/api/tasks/${project.id}`, createTasksRouter({ db, logger }));
+
+    logger.info({ projectId: project.id, projectName: project.name }, 'Project tasks API registered');
+  }
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
 

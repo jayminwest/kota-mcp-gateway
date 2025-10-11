@@ -72,11 +72,12 @@ export class TasksDatabase {
 
   constructor(
     private readonly dataDir: string,
+    private readonly projectId: string,
     private readonly logger: Logger
   ) {}
 
   async init(): Promise<void> {
-    const dbPath = path.join(this.dataDir, 'kota_tasks.db');
+    const dbPath = path.join(this.dataDir, `tasks_${this.projectId}.db`);
     this.db = await open({
       filename: dbPath,
       driver: sqlite3.Database,
