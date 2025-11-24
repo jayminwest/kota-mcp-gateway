@@ -66,8 +66,15 @@ class BundleRegistry {
   private readonly definitions = new Map<string, BundleDefinition>();
   private readonly order: string[] = [];
   private readonly enabled = new Map<string, { handler: BaseHandler; tools: string[] }>();
+  private readonly disabledBundles: Set<string>;
 
-  constructor(private readonly opts: { logger: typeof logger; mcp: McpServer }) {}
+  constructor(private readonly opts: {
+    logger: typeof logger;
+    mcp: McpServer;
+    disabledBundles?: string[];
+  }) {
+    this.disabledBundles = new Set(opts.disabledBundles ?? []);
+  }
 
   addBundle(def: BundleDefinition): void {
     if (this.definitions.has(def.key)) {
@@ -75,8 +82,12 @@ class BundleRegistry {
     }
     this.definitions.set(def.key, def);
     this.order.push(def.key);
-    if (def.autoEnable) {
+
+    // Only auto-enable if not in disabled list
+    if (def.autoEnable && !this.disabledBundles.has(def.key)) {
       this.enableBundle(def.key);
+    } else if (this.disabledBundles.has(def.key)) {
+      this.opts.logger.info({ bundle: def.key }, 'Bundle auto-enable skipped (disabled in context)');
     }
   }
 
@@ -116,6 +127,19 @@ class BundleRegistry {
         tags: def.tags,
       };
     });
+  }
+
+  getDisabledBundles(): string[] {
+    return Array.from(this.disabledBundles);
+  }
+
+  disableBundle(key: string): void {
+    const def = this.definitions.get(key);
+    if (!def) {
+      throw new Error(`Unknown bundle: ${key}`);
+    }
+    this.disabledBundles.add(key);
+    this.opts.logger.info({ bundle: key }, 'Bundle marked for disable on restart');
   }
 
   private registerHandler(bundleKey: string, handler: BaseHandler): string[] {
