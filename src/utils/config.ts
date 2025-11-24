@@ -72,6 +72,7 @@ const ConfigSchema = z.object({
   SPOTIFY_TOKEN_EXPIRES_AT: z.coerce.number().optional(),
 
   MCP_AUTH_TOKEN: z.string().optional(),
+  MCP_AGENTS_API_KEY: z.string().optional(),
 
   // GitHub
   GITHUB_TOKEN: z.string().optional(),

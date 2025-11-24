@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from './utils/config.js';
 import { correlationIdMiddleware, logger } from './utils/logger.js';
 import { errorMiddleware } from './middleware/error.js';
-import { optionalAuthMiddleware } from './middleware/auth.js';
+import { optionalAuthMiddleware, requiredAuthMiddleware } from './middleware/auth.js';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -29,6 +29,7 @@ import { WorkspaceHandler } from './handlers/workspace.js';
 import { WebhooksHandler } from './handlers/webhooks.js';
 import { SpotifyHandler } from './handlers/spotify.js';
 import { KwcHandler } from './handlers/kwc.js';
+import { TasksHandler } from './handlers/tasks.js';
 import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
 import type { BaseHandler } from './handlers/base.js';
 import { KwcStore } from './utils/kwc-store.js';
@@ -684,6 +685,13 @@ async function main() {
       factory: make(WebhooksHandler),
       tags: ['optional', 'integration'],
     },
+    {
+      key: 'tasks',
+      description: 'AI Developer Workflow task queue management',
+      autoEnable: true,
+      factory: make(TasksHandler),
+      tags: ['core', 'adw'],
+    },
   ];
 
   for (const def of bundleDefinitions) {
@@ -722,6 +730,7 @@ async function main() {
       '- help://spotify/usage',
       '- help://kwc/usage',
       '- help://workspace/usage',
+      '- help://tasks/usage',
     ].join('\n')
   );
 
@@ -841,6 +850,39 @@ async function main() {
   ].join('\n');
 
   registerHelpResource('kwc_help_usage', 'help://kwc/usage', kwcHelpText);
+
+  const tasksHelpText = [
+    'Tasks Handler Help',
+    '',
+    'Overview:',
+    '- Read-only access to AI Developer Workflow (ADW) task queues across multiple projects',
+    '- Each project has an isolated task queue with SQLite backing',
+    '- View and create tasks; lifecycle management (claim/start/complete/fail) handled via REST API',
+    '',
+    'Projects:',
+    '- tasks_list_projects {} - List all enabled projects',
+    '',
+    'Core Tools:',
+    '- tasks_list { project_id, status?, priority?, limit?, offset? }',
+    '- tasks_get { project_id, task_id }',
+    '- tasks_create { project_id, title, description, priority?, tags?, worktree? }',
+    '',
+    'Management:',
+    '- tasks_update { project_id, task_id, title?, description?, priority?, tags?, worktree? }',
+    '- tasks_delete { project_id, task_id }',
+    '',
+    'Notes:',
+    '- Task lifecycle operations (claim/start/complete/fail) are available via REST API only',
+    '- Use the REST API at /api/tasks/:project_id/* for ADW automation',
+    '- See docs/KOTADB_API_REFERENCE.md for full lifecycle documentation',
+    '',
+    'Example Usage:',
+    '1. tasks_list_projects {}',
+    '2. tasks_list { "project_id": "kotadb", "status": "pending", "priority": "high" }',
+    '3. tasks_create { "project_id": "kotadb", "title": "Add feature X", "description": "..." }',
+  ].join('\n');
+
+  registerHelpResource('tasks_help_usage', 'help://tasks/usage', tasksHelpText);
 
   registerHelpResource(
     'workspace_help_usage',
@@ -1029,13 +1071,74 @@ async function main() {
     ],
   }));
 
+  mcp.prompt('tasks.examples', 'Examples for task queue management', async () => ({
+    description: 'Tasks viewing and creation examples',
+    messages: [
+      { role: 'assistant', content: { type: 'text', text: 'tasks_list_projects {}' } },
+      { role: 'assistant', content: { type: 'text', text: 'tasks_list { "project_id": "kotadb", "status": "pending", "priority": "high", "limit": 5 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'tasks_get { "project_id": "kotadb", "task_id": "task-abc123" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'tasks_create { "project_id": "kotadb", "title": "Add rate limiting", "description": "Implement rate limiting for API endpoints", "priority": "high", "tags": { "model": "sonnet" } }' } },
+      { role: 'assistant', content: { type: 'text', text: 'tasks_update { "project_id": "kotadb", "task_id": "task-abc123", "priority": "high" }' } },
+    ],
+  }));
+
   // Connect after tools are registered
   await mcp.connect(transport);
 
-  // Wire HTTP transport to Express routes
+  // Wire HTTP transport to Express routes (main MCP endpoint - full access)
   app.get('/mcp', (req, res) => transport.handleRequest(req as any, res as any));
   app.post('/mcp', (req, res) => transport.handleRequest(req as any, res as any, (req as any).body));
   app.delete('/mcp', (req, res) => transport.handleRequest(req as any, res as any));
+
+  // Isolated MCP server for external agents (tasks-only access)
+  const agentsMcp = new McpServer({
+    name: 'kota-agents-gateway',
+    version: '1.0.0',
+  }, {
+    instructions: [
+      'KOTA Agents Gateway - Tasks-only MCP endpoint for external agents',
+      '- This endpoint provides isolated access to task queue management',
+      '- Only the Tasks handler is exposed (tasks_list_projects, tasks_list, tasks_get, tasks_create, tasks_update, tasks_delete)',
+      '- Requires Bearer token authentication (MCP_AGENTS_API_KEY)',
+      '- Use this endpoint for cross-project agent communication',
+    ].join('\n')
+  });
+
+  // Register only the Tasks handler for agents
+  const agentsTasksHandler = new TasksHandler({ logger, config });
+  for (const spec of agentsTasksHandler.getTools()) {
+    const name = `${agentsTasksHandler.prefix}_${spec.action}`;
+    agentsMcp.registerTool(name, {
+      description: spec.description,
+      inputSchema: spec.inputSchema,
+      outputSchema: spec.outputSchema,
+    }, async (args: any, extra) => {
+      const res = await agentsTasksHandler.execute(spec.action, args ?? {});
+      logger.debug({ tool: name, args, sessionId: extra?.sessionId, endpoint: 'agents' }, 'Agent tool executed');
+      return res;
+    });
+    logger.info({ tool: name, endpoint: '/mcp/agents' }, 'Agent tool registered');
+  }
+
+  // Create separate transport for agents endpoint
+  const agentsTransport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+
+  await agentsMcp.connect(agentsTransport);
+
+  // Wire agents endpoint with required API key authentication
+  const agentsAuth = requiredAuthMiddleware(config.MCP_AGENTS_API_KEY);
+  app.get('/mcp/agents', agentsAuth, (req, res) => agentsTransport.handleRequest(req as any, res as any));
+  app.post('/mcp/agents', agentsAuth, (req, res) => agentsTransport.handleRequest(req as any, res as any, (req as any).body));
+  app.delete('/mcp/agents', agentsAuth, (req, res) => agentsTransport.handleRequest(req as any, res as any));
+
+  logger.info({
+    endpoint: '/mcp/agents',
+    authenticated: Boolean(config.MCP_AGENTS_API_KEY),
+    handler: 'tasks'
+  }, 'Agents MCP endpoint configured');
 
   // Error handling
   app.use(errorMiddleware);

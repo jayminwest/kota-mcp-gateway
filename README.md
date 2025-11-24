@@ -42,11 +42,15 @@ Endpoints
 - `GET /kwc/api/runs` | `POST /kwc/api/runs` – list or append Kendama run history
 - `PUT /kwc/api/runs/:recordedAt` – overwrite a run's attempts (fix mis-entered times)
 - `GET /kwc/api/analytics` – aggregate Kendama stats (query: `days`, `window`)
-- `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport
+- `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport (full handler access)
+- `GET/POST/DELETE /mcp/agents` – Isolated MCP endpoint for external agents (tasks-only, requires API key)
 - `GET /auth/github/status` – GitHub token and rate status
 - `/api/tasks/:project_id/*` – Task management API for AI Developer Workflows (see [docs/KOTADB_API_REFERENCE.md](docs/KOTADB_API_REFERENCE.md))
 
 MCP Client Config
+
+Full access (local use):
+```json
 {
   "mcpServers": {
     "kota": {
@@ -54,11 +58,33 @@ MCP Client Config
       "args": [
         "-y",
         "@modelcontextprotocol/server-http-client",
-        "http://localhost:8084"
+        "http://localhost:8084/mcp"
       ]
     }
   }
 }
+```
+
+External agents (tasks-only, requires API key):
+```json
+{
+  "mcpServers": {
+    "kota-agents": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-http-client",
+        "http://localhost:8084/mcp/agents"
+      ],
+      "env": {
+        "HTTP_AUTHORIZATION": "Bearer your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+See [docs/AGENT_SETUP_GUIDE.md](docs/AGENT_SETUP_GUIDE.md) for external agent configuration.
 
 Docker
 - `docker-compose up --build -d`
