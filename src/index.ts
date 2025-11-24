@@ -590,6 +590,9 @@ async function main() {
   const toolkitApi: ToolkitApi = {
     listBundles: () => registry.listBundles(),
     enableBundle: (bundle: string) => registry.enableBundle(bundle),
+    disableBundle: (bundle: string) => registry.disableBundle(bundle),
+    getDisabledBundles: () => registry.getDisabledBundles(),
+    contextService,
   };
 
   const bundleDefinitions: BundleDefinition[] = [
