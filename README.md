@@ -86,6 +86,28 @@ External agents (tasks-only, requires API key):
 
 See [docs/AGENT_SETUP_GUIDE.md](docs/AGENT_SETUP_GUIDE.md) for external agent configuration.
 
+Context Management
+
+Control which handler bundles load at startup by defining contexts in `~/.kota/context.json`:
+
+```json
+{
+  "active_contexts": ["work", "health"],
+  "disabled_bundles": ["kwc", "spotify", "kasa"],
+  "updated": "2025-11-23T17:45:00.000Z"
+}
+```
+
+**Available Bundle Keys:** toolkit, gmail, calendar, memory, daily, context_snapshot, kwc, content_calendar, whoop, kasa, kraken, rize, slack, spotify, github, stripe, workspace, webhooks, tasks
+
+**MCP Tools:**
+- `toolkit_get_context` – View current context configuration
+- `toolkit_set_context` – Update contexts and disabled bundles
+- `toolkit_disable_bundle` – Disable a bundle (persisted)
+- `toolkit_enable_bundle` – Enable a bundle (with `persist: true` to remove from disabled list)
+
+Restart the gateway after context changes to apply bundle enable/disable updates.
+
 Docker
 - `docker-compose up --build -d`
 - Default mounts:
