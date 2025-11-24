@@ -7,6 +7,7 @@ import { loadConfig } from './utils/config.js';
 import { correlationIdMiddleware, logger } from './utils/logger.js';
 import { errorMiddleware } from './middleware/error.js';
 import { optionalAuthMiddleware, requiredAuthMiddleware } from './middleware/auth.js';
+import { ContextConfigService } from './utils/context-config.js';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -573,7 +574,16 @@ async function main() {
     enableJsonResponse: true,
   });
 
-  const registry = new BundleRegistry({ logger, mcp });
+  // Load context configuration
+  const contextService = new ContextConfigService(logger);
+  const contextConfig = await contextService.load();
+  const disabledBundles = contextConfig?.disabled_bundles ?? [];
+
+  if (disabledBundles.length > 0) {
+    logger.info({ disabledBundles }, 'Context configuration loaded, some bundles will be disabled');
+  }
+
+  const registry = new BundleRegistry({ logger, mcp, disabledBundles });
   const make = (HandlerCtor: any, extra: Record<string, unknown> = {}) => () =>
     new HandlerCtor({ logger, config, ...extra });
 
