@@ -29,12 +29,9 @@ import { ToolkitHandler } from './handlers/toolkit.js';
 import { WorkspaceHandler } from './handlers/workspace.js';
 import { WebhooksHandler } from './handlers/webhooks.js';
 import { SpotifyHandler } from './handlers/spotify.js';
-import { KwcHandler } from './handlers/kwc.js';
 import { TasksHandler } from './handlers/tasks.js';
 import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
 import type { BaseHandler } from './handlers/base.js';
-import { KwcStore } from './utils/kwc-store.js';
-import { createKwcRouter, createKwcAnalyticsRouter } from './routes/kwc.js';
 import { createTasksRouter } from './routes/tasks.js';
 import { TasksDatabase } from './utils/tasks-db.js';
 import { loadProjects, getEnabledProjects } from './utils/projects-config.js';
@@ -171,33 +168,9 @@ async function main() {
   const config = loadConfig();
   const app = express();
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const kwcPublicDir = path.resolve(moduleDir, '../public/kwc');
   const tasksPublicDir = path.resolve(moduleDir, '../public/tasks');
 
   app.use(cors());
-  app.get('/kwc', (req, res) => {
-    res.sendFile(path.join(kwcPublicDir, 'index.html'), err => {
-      if (err) {
-        const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
-        ((req as any).log || logger).warn({ err }, 'Failed to serve KWC index');
-        if (!res.headersSent) {
-          res.status(status).end();
-        }
-      }
-    });
-  });
-  app.get('/kwc/stats', (req, res) => {
-    res.sendFile(path.join(kwcPublicDir, 'stats.html'), err => {
-      if (err) {
-        const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
-        ((req as any).log || logger).warn({ err }, 'Failed to serve KWC stats');
-        if (!res.headersSent) {
-          res.status(status).end();
-        }
-      }
-    });
-  });
-  app.use('/kwc', express.static(kwcPublicDir, { index: 'index.html', redirect: true }));
 
   // Tasks Monitor routes - handle both /tasks and /tasks/ explicitly
   const serveTasksIndex = (req: express.Request, res: express.Response) => {
@@ -233,10 +206,6 @@ async function main() {
   }));
   app.use(correlationIdMiddleware);
   app.use(optionalAuthMiddleware(config.MCP_AUTH_TOKEN));
-
-  const kwcStore = new KwcStore(config, logger);
-  app.use('/kwc/api/analytics', createKwcAnalyticsRouter({ store: kwcStore, logger }));
-  app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
 
   // Initialize Tasks API with multi-project support
   const allProjects = await loadProjects(config.DATA_DIR, logger);
@@ -639,13 +608,6 @@ async function main() {
       tags: ['core', 'automation'],
     },
     {
-      key: 'kwc',
-      description: 'Kendama World Cup lineup and run tracking',
-      autoEnable: true,
-      factory: make(KwcHandler),
-      tags: ['optional', 'training'],
-    },
-    {
       key: 'content_calendar',
       description: 'Editorial and campaign planning tools',
       autoEnable: true,
@@ -762,10 +724,9 @@ async function main() {
       '- help://kraken/usage',
       '- help://google/usage',
       '- help://github/usage',
-      '- help://daily/usage (aliases: help://nutrition/usage, help://vitals/usage)',
+      '- help://daily/usage',
       '- help://memory/usage',
       '- help://spotify/usage',
-      '- help://kwc/usage',
       '- help://workspace/usage',
       '- help://tasks/usage',
     ].join('\n')
@@ -852,10 +813,6 @@ async function main() {
     '- daily_list_days {}',
     '- daily_delete_day { date }',
     '',
-    'Aliases (same input schema):',
-    '- nutrition_log_day / nutrition_append_entries / ...',
-    '- vitals_log_day / vitals_append_entries / ...',
-    '',
     'Notes:',
     '- Entries can represent food, drink, supplements, substances, activities, training sessions, and free-form notes.',
     '- Provide structured metrics when available (e.g., duration_minutes, metrics.heart_rate_avg, macros.calories).',
@@ -863,30 +820,6 @@ async function main() {
   ].join('\n');
 
   registerHelpResource('daily_help_usage', 'help://daily/usage', dailyHelpText);
-  registerHelpResource('nutrition_help_usage', 'help://nutrition/usage', dailyHelpText);
-  registerHelpResource('vitals_help_usage', 'help://vitals/usage', dailyHelpText);
-
-  const kwcHelpText = [
-    'Kendama Run Logger Help',
-    '',
-    'Tools:',
-    '- kwc_get_lineup {}',
-    '- kwc_set_lineup { tricks }',
-    '- kwc_list_runs { date?, limit? }',
-    '- kwc_add_run { date, tricks, notes? }',
-    '- kwc_delete_run { recorded_at }',
-    '- kwc_get_trick_stats { trick_code, days? }',
-    '- kwc_get_run_stats { days?, top? }',
-    '- kwc_get_trend { trick_code?, days?, window? }',
-    '',
-    'Notes:',
-    '- Trick scores auto-derive from the trick level (e.g., 9-1 = 9 points).',
-    '- Each run expects exactly the tricks you are tracking; include attempt durations for every trick.',
-    '- Use list_runs with a date filter to pull all attempts for a competition day.',
-    '- Analytics helpers surface medians, IQR, and rolling trends to gauge consistency over time.',
-  ].join('\n');
-
-  registerHelpResource('kwc_help_usage', 'help://kwc/usage', kwcHelpText);
 
   const tasksHelpText = [
     'Tasks Handler Help',
@@ -1092,19 +1025,6 @@ async function main() {
       { role: 'assistant', content: { type: 'text', text: 'spotify_get_current {}' } },
       { role: 'assistant', content: { type: 'text', text: 'spotify_recent_tracks { "limit": 10 }' } },
       { role: 'assistant', content: { type: 'text', text: 'spotify_top_items { "type": "tracks", "time_range": "long_term", "limit": 5 }' } },
-    ],
-  }));
-
-  mcp.prompt('kwc.examples', 'Examples for Kendama run logging', async () => ({
-    description: 'KWC lineup and run logging examples',
-    messages: [
-      { role: 'assistant', content: { type: 'text', text: 'kwc_get_lineup {}' } },
-      { role: 'assistant', content: { type: 'text', text: 'kwc_set_lineup { "tricks": [{ "code": "9-1" }, { "code": "9-5" }, { "code": "8-4" }] }' } },
-      { role: 'assistant', content: { type: 'text', text: 'kwc_add_run { "date": "2025-10-02", "tricks": [{ "code": "9-1", "attempts": [{ "durationSeconds": 42 }] }, { "code": "9-5", "attempts": [{ "durationSeconds": 55 }] }] }' } },
-      { role: 'assistant', content: { type: 'text', text: 'kwc_list_runs { "date": "2025-10-02" }' } },
-      { role: 'assistant', content: { type: 'text', text: 'kwc_get_trick_stats { "trick_code": "9-1", "days": 30 }' } },
-      { role: 'assistant', content: { type: 'text', text: 'kwc_get_run_stats { "days": 14 }' } },
-      { role: 'assistant', content: { type: 'text', text: 'kwc_get_trend { "trick_code": "8-4", "days": 60 }' } },
     ],
   }));
 
