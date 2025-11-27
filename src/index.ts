@@ -1,13 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './utils/config.js';
 import { correlationIdMiddleware, logger } from './utils/logger.js';
 import { errorMiddleware } from './middleware/error.js';
-import { optionalAuthMiddleware, requiredAuthMiddleware } from './middleware/auth.js';
-import { ContextConfigService } from './utils/context-config.js';
+import { optionalAuthMiddleware } from './middleware/auth.js';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -29,12 +27,11 @@ import { ToolkitHandler } from './handlers/toolkit.js';
 import { WorkspaceHandler } from './handlers/workspace.js';
 import { WebhooksHandler } from './handlers/webhooks.js';
 import { SpotifyHandler } from './handlers/spotify.js';
-import { TasksHandler } from './handlers/tasks.js';
+import { KwcHandler } from './handlers/kwc.js';
 import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
 import type { BaseHandler } from './handlers/base.js';
-import { createTasksRouter } from './routes/tasks.js';
-import { TasksDatabase } from './utils/tasks-db.js';
-import { loadProjects, getEnabledProjects } from './utils/projects-config.js';
+import { KwcStore } from './utils/kwc-store.js';
+import { createKwcRouter, createKwcAnalyticsRouter } from './routes/kwc.js';
 import { getAuthUrl, handleOAuthCallback, loadTokens, getGmail } from './utils/google.js';
 import { getWhoopAuthUrl, exchangeWhoopCode, loadWhoopTokens } from './utils/whoop.js';
 import { KrakenClient } from './utils/kraken.js';
@@ -43,9 +40,6 @@ import { generateSpotifyState, getSpotifyAuthUrl, exchangeSpotifyCode, loadSpoti
 import { WebhookManager } from './webhooks/manager.js';
 import { loadWebhookConfig } from './utils/webhook-config.js';
 import { AttentionConfigService, AttentionPipeline, CodexClassificationAgent, DispatchManager, SlackDispatchTransport } from './attention/index.js';
-import { KotaEntryPointHandler } from './handlers/kota-entry-point.js';
-import { SimpleContextBundleRegistry } from './contexts/registry.js';
-import { startupBundle } from './contexts/startup.js';
 
 function asyncHandler<
   T extends (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
@@ -61,22 +55,14 @@ interface BundleDefinition {
   factory: () => BaseHandler;
   autoEnable?: boolean;
   tags?: string[];
-  exposeTools?: boolean;  // default: true for backward compat
 }
 
 class BundleRegistry {
   private readonly definitions = new Map<string, BundleDefinition>();
   private readonly order: string[] = [];
   private readonly enabled = new Map<string, { handler: BaseHandler; tools: string[] }>();
-  private readonly disabledBundles: Set<string>;
 
-  constructor(private readonly opts: {
-    logger: typeof logger;
-    mcp: McpServer;
-    disabledBundles?: string[];
-  }) {
-    this.disabledBundles = new Set(opts.disabledBundles ?? []);
-  }
+  constructor(private readonly opts: { logger: typeof logger; mcp: McpServer }) {}
 
   addBundle(def: BundleDefinition): void {
     if (this.definitions.has(def.key)) {
@@ -84,12 +70,8 @@ class BundleRegistry {
     }
     this.definitions.set(def.key, def);
     this.order.push(def.key);
-
-    // Only auto-enable if not in disabled list
-    if (def.autoEnable && !this.disabledBundles.has(def.key)) {
+    if (def.autoEnable) {
       this.enableBundle(def.key);
-    } else if (this.disabledBundles.has(def.key)) {
-      this.opts.logger.info({ bundle: def.key }, 'Bundle auto-enable skipped (disabled in context)');
     }
   }
 
@@ -131,31 +113,8 @@ class BundleRegistry {
     });
   }
 
-  getDisabledBundles(): string[] {
-    return Array.from(this.disabledBundles);
-  }
-
-  disableBundle(key: string): void {
-    const def = this.definitions.get(key);
-    if (!def) {
-      throw new Error(`Unknown bundle: ${key}`);
-    }
-    this.disabledBundles.add(key);
-    this.opts.logger.info({ bundle: key }, 'Bundle marked for disable on restart');
-  }
-
   private registerHandler(bundleKey: string, handler: BaseHandler): string[] {
     const registered: string[] = [];
-    const def = this.definitions.get(bundleKey);
-
-    // Only register tools with MCP if exposeTools is true (default)
-    const shouldExpose = def?.exposeTools !== false;
-
-    if (!shouldExpose) {
-      this.opts.logger.info({ bundle: bundleKey }, 'Bundle enabled (tools not exposed to MCP)');
-      return registered;
-    }
-
     const prefixes = [handler.prefix, ...(handler.aliases ?? [])];
     const uniquePrefixes = Array.from(new Set(prefixes));
     for (const spec of handler.getTools()) {
@@ -182,36 +141,32 @@ async function main() {
   const config = loadConfig();
   const app = express();
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const tasksPublicDir = path.resolve(moduleDir, '../public/tasks');
+  const kwcPublicDir = path.resolve(moduleDir, '../public/kwc');
 
   app.use(cors());
-
-  // Tasks Monitor routes - handle both /tasks and /tasks/ explicitly
-  const serveTasksIndex = (req: express.Request, res: express.Response) => {
-    res.sendFile(path.join(tasksPublicDir, 'index.html'), err => {
+  app.get('/kwc', (req, res) => {
+    res.sendFile(path.join(kwcPublicDir, 'index.html'), err => {
       if (err) {
         const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
-        ((req as any).log || logger).warn({ err }, 'Failed to serve Tasks monitor');
+        ((req as any).log || logger).warn({ err }, 'Failed to serve KWC index');
         if (!res.headersSent) {
           res.status(status).end();
         }
       }
     });
-  };
-
-  app.get('/tasks', serveTasksIndex);
-  app.get('/tasks/', serveTasksIndex);
-
-  app.use('/tasks', express.static(tasksPublicDir, {
-    index: false, // Don't auto-serve index.html - we handle it explicitly above
-    redirect: false,
-    etag: false,
-    lastModified: false,
-    maxAge: 0,
-    setHeaders: (res) => {
-      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    }
-  }));
+  });
+  app.get('/kwc/stats', (req, res) => {
+    res.sendFile(path.join(kwcPublicDir, 'stats.html'), err => {
+      if (err) {
+        const status = typeof (err as any)?.statusCode === 'number' ? (err as any).statusCode : 500;
+        ((req as any).log || logger).warn({ err }, 'Failed to serve KWC stats');
+        if (!res.headersSent) {
+          res.status(status).end();
+        }
+      }
+    });
+  });
+  app.use('/kwc', express.static(kwcPublicDir, { index: 'index.html', redirect: true }));
   app.use(express.json({
     limit: '4mb',
     verify: (req, _res, buf) => {
@@ -221,28 +176,9 @@ async function main() {
   app.use(correlationIdMiddleware);
   app.use(optionalAuthMiddleware(config.MCP_AUTH_TOKEN));
 
-  // Initialize Tasks API with multi-project support
-  const allProjects = await loadProjects(config.DATA_DIR, logger);
-  const enabledProjects = getEnabledProjects(allProjects);
-
-  // Rate limiter for task API endpoints
-  const tasksRateLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute window
-    max: 100, // limit each IP to 100 requests per windowMs
-    message: 'Too many requests from this IP, please try again later',
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  });
-
-  for (const project of enabledProjects) {
-    const db = new TasksDatabase(config.DATA_DIR, project.id, logger);
-    await db.init();
-
-    // Register project-specific routes with rate limiting
-    app.use(`/api/tasks/${project.id}`, tasksRateLimiter, createTasksRouter({ db, logger }));
-
-    logger.info({ projectId: project.id, projectName: project.name }, 'Project tasks API registered');
-  }
+  const kwcStore = new KwcStore(config, logger);
+  app.use('/kwc/api/analytics', createKwcAnalyticsRouter({ store: kwcStore, logger }));
+  app.use('/kwc/api', createKwcRouter({ store: kwcStore, logger }));
 
   const webhookConfig = await loadWebhookConfig(config.DATA_DIR, logger);
 
@@ -557,53 +493,22 @@ async function main() {
     enableJsonResponse: true,
   });
 
-  // Load context configuration
-  const contextService = new ContextConfigService(logger);
-  const contextConfig = await contextService.load();
-  const disabledBundles = contextConfig?.disabled_bundles ?? [];
-
-  if (disabledBundles.length > 0) {
-    logger.info({ disabledBundles }, 'Context configuration loaded, some bundles will be disabled');
-  }
-
-  const registry = new BundleRegistry({ logger, mcp, disabledBundles });
-
-  // Create context bundle registry and register bundles
-  const contextBundleRegistry = new SimpleContextBundleRegistry();
-  contextBundleRegistry.register(startupBundle);
-
+  const registry = new BundleRegistry({ logger, mcp });
   const make = (HandlerCtor: any, extra: Record<string, unknown> = {}) => () =>
     new HandlerCtor({ logger, config, ...extra });
 
   const toolkitApi: ToolkitApi = {
     listBundles: () => registry.listBundles(),
     enableBundle: (bundle: string) => registry.enableBundle(bundle),
-    disableBundle: (bundle: string) => registry.disableBundle(bundle),
-    getDisabledBundles: () => registry.getDisabledBundles(),
-    contextService,
   };
 
   const bundleDefinitions: BundleDefinition[] = [
-    {
-      key: 'kota_entry_point',
-      description: 'Unified discovery and invocation layer',
-      autoEnable: true,
-      factory: () => new KotaEntryPointHandler({
-        logger,
-        config,
-        bundleRegistry: registry,
-        contextRegistry: contextBundleRegistry,
-      }),
-      tags: ['core', 'entry_point'],
-      exposeTools: true,  // ONLY kota_entry_point exposes tools
-    },
     {
       key: 'toolkit',
       description: 'Enable optional handler bundles',
       autoEnable: true,
       factory: make(ToolkitHandler, { toolkit: toolkitApi }),
       tags: ['core'],
-      exposeTools: false,  // Don't expose toolkit tools
     },
     {
       key: 'gmail',
@@ -611,7 +516,6 @@ async function main() {
       autoEnable: true,
       factory: make(GmailHandler),
       tags: ['core', 'google'],
-      exposeTools: false,  // Don't expose gmail tools
     },
     {
       key: 'calendar',
@@ -619,7 +523,6 @@ async function main() {
       autoEnable: true,
       factory: make(CalendarHandler),
       tags: ['core', 'google'],
-      exposeTools: false,  // Don't expose calendar tools
     },
     {
       key: 'memory',
@@ -627,7 +530,6 @@ async function main() {
       autoEnable: true,
       factory: make(MemoryHandler),
       tags: ['core'],
-      exposeTools: false,  // Don't expose memory tools
     },
     {
       key: 'daily',
@@ -635,7 +537,6 @@ async function main() {
       autoEnable: true,
       factory: make(DailyHandler),
       tags: ['core', 'health'],
-      exposeTools: false,  // Don't expose daily tools
     },
     {
       key: 'context_snapshot',
@@ -643,7 +544,13 @@ async function main() {
       autoEnable: true,
       factory: make(ContextSnapshotHandler),
       tags: ['core', 'automation'],
-      exposeTools: false,  // Don't expose context_snapshot tools
+    },
+    {
+      key: 'kwc',
+      description: 'Kendama World Cup lineup and run tracking',
+      autoEnable: true,
+      factory: make(KwcHandler),
+      tags: ['optional', 'training'],
     },
     {
       key: 'content_calendar',
@@ -651,7 +558,6 @@ async function main() {
       autoEnable: true,
       factory: make(ContentCalendarHandler),
       tags: ['core', 'planning'],
-      exposeTools: false,  // Don't expose content_calendar tools
     },
     {
       key: 'whoop',
@@ -659,7 +565,6 @@ async function main() {
       autoEnable: true,
       factory: make(WhoopHandler),
       tags: ['optional', 'health'],
-      exposeTools: false,  // Don't expose whoop tools
     },
     {
       key: 'kasa',
@@ -667,7 +572,6 @@ async function main() {
       autoEnable: true,
       factory: make(KasaHandler),
       tags: ['optional', 'iot'],
-      exposeTools: false,  // Don't expose kasa tools
     },
     {
       key: 'kraken',
@@ -675,7 +579,6 @@ async function main() {
       autoEnable: true,
       factory: make(KrakenHandler),
       tags: ['optional', 'finance'],
-      exposeTools: false,  // Don't expose kraken tools
     },
     {
       key: 'rize',
@@ -683,7 +586,6 @@ async function main() {
       autoEnable: true,
       factory: make(RizeHandler),
       tags: ['optional', 'productivity'],
-      exposeTools: false,  // Don't expose rize tools
     },
     {
       key: 'slack',
@@ -691,7 +593,6 @@ async function main() {
       autoEnable: true,
       factory: make(SlackHandler),
       tags: ['optional', 'communication'],
-      exposeTools: false,  // Don't expose slack tools
     },
     {
       key: 'spotify',
@@ -699,7 +600,6 @@ async function main() {
       autoEnable: true,
       factory: make(SpotifyHandler),
       tags: ['optional', 'media'],
-      exposeTools: false,  // Don't expose spotify tools
     },
     {
       key: 'github',
@@ -707,7 +607,6 @@ async function main() {
       autoEnable: true,
       factory: make(GitHubHandler),
       tags: ['optional', 'engineering'],
-      exposeTools: false,  // Don't expose github tools
     },
     {
       key: 'stripe',
@@ -715,7 +614,6 @@ async function main() {
       autoEnable: true,
       factory: make(StripeHandler),
       tags: ['optional', 'finance'],
-      exposeTools: false,  // Don't expose stripe tools
     },
     {
       key: 'workspace',
@@ -723,7 +621,6 @@ async function main() {
       autoEnable: true,
       factory: make(WorkspaceHandler),
       tags: ['optional', 'knowledge'],
-      exposeTools: false,  // Don't expose workspace tools
     },
     {
       key: 'webhooks',
@@ -731,15 +628,6 @@ async function main() {
       autoEnable: true,
       factory: make(WebhooksHandler),
       tags: ['optional', 'integration'],
-      exposeTools: false,  // Don't expose webhooks tools
-    },
-    {
-      key: 'tasks',
-      description: 'AI Developer Workflow task queue management',
-      autoEnable: true,
-      factory: make(TasksHandler),
-      tags: ['core', 'adw'],
-      exposeTools: false,  // Don't expose tasks tools
     },
   ];
 
@@ -774,11 +662,11 @@ async function main() {
       '- help://kraken/usage',
       '- help://google/usage',
       '- help://github/usage',
-      '- help://daily/usage',
+      '- help://daily/usage (aliases: help://nutrition/usage, help://vitals/usage)',
       '- help://memory/usage',
       '- help://spotify/usage',
+      '- help://kwc/usage',
       '- help://workspace/usage',
-      '- help://tasks/usage',
     ].join('\n')
   );
 
@@ -863,6 +751,10 @@ async function main() {
     '- daily_list_days {}',
     '- daily_delete_day { date }',
     '',
+    'Aliases (same input schema):',
+    '- nutrition_log_day / nutrition_append_entries / ...',
+    '- vitals_log_day / vitals_append_entries / ...',
+    '',
     'Notes:',
     '- Entries can represent food, drink, supplements, substances, activities, training sessions, and free-form notes.',
     '- Provide structured metrics when available (e.g., duration_minutes, metrics.heart_rate_avg, macros.calories).',
@@ -870,39 +762,30 @@ async function main() {
   ].join('\n');
 
   registerHelpResource('daily_help_usage', 'help://daily/usage', dailyHelpText);
+  registerHelpResource('nutrition_help_usage', 'help://nutrition/usage', dailyHelpText);
+  registerHelpResource('vitals_help_usage', 'help://vitals/usage', dailyHelpText);
 
-  const tasksHelpText = [
-    'Tasks Handler Help',
+  const kwcHelpText = [
+    'Kendama Run Logger Help',
     '',
-    'Overview:',
-    '- Read-only access to AI Developer Workflow (ADW) task queues across multiple projects',
-    '- Each project has an isolated task queue with SQLite backing',
-    '- View and create tasks; lifecycle management (claim/start/complete/fail) handled via REST API',
-    '',
-    'Projects:',
-    '- tasks_list_projects {} - List all enabled projects',
-    '',
-    'Core Tools:',
-    '- tasks_list { project_id, status?, priority?, limit?, offset? }',
-    '- tasks_get { project_id, task_id }',
-    '- tasks_create { project_id, title, description, priority?, tags?, worktree? }',
-    '',
-    'Management:',
-    '- tasks_update { project_id, task_id, title?, description?, priority?, tags?, worktree? }',
-    '- tasks_delete { project_id, task_id }',
+    'Tools:',
+    '- kwc_get_lineup {}',
+    '- kwc_set_lineup { tricks }',
+    '- kwc_list_runs { date?, limit? }',
+    '- kwc_add_run { date, tricks, notes? }',
+    '- kwc_delete_run { recorded_at }',
+    '- kwc_get_trick_stats { trick_code, days? }',
+    '- kwc_get_run_stats { days?, top? }',
+    '- kwc_get_trend { trick_code?, days?, window? }',
     '',
     'Notes:',
-    '- Task lifecycle operations (claim/start/complete/fail) are available via REST API only',
-    '- Use the REST API at /api/tasks/:project_id/* for ADW automation',
-    '- See docs/KOTADB_API_REFERENCE.md for full lifecycle documentation',
-    '',
-    'Example Usage:',
-    '1. tasks_list_projects {}',
-    '2. tasks_list { "project_id": "kotadb", "status": "pending", "priority": "high" }',
-    '3. tasks_create { "project_id": "kotadb", "title": "Add feature X", "description": "..." }',
+    '- Trick scores auto-derive from the trick level (e.g., 9-1 = 9 points).',
+    '- Each run expects exactly the tricks you are tracking; include attempt durations for every trick.',
+    '- Use list_runs with a date filter to pull all attempts for a competition day.',
+    '- Analytics helpers surface medians, IQR, and rolling trends to gauge consistency over time.',
   ].join('\n');
 
-  registerHelpResource('tasks_help_usage', 'help://tasks/usage', tasksHelpText);
+  registerHelpResource('kwc_help_usage', 'help://kwc/usage', kwcHelpText);
 
   registerHelpResource(
     'workspace_help_usage',
@@ -1078,74 +961,26 @@ async function main() {
     ],
   }));
 
-  mcp.prompt('tasks.examples', 'Examples for task queue management', async () => ({
-    description: 'Tasks viewing and creation examples',
+  mcp.prompt('kwc.examples', 'Examples for Kendama run logging', async () => ({
+    description: 'KWC lineup and run logging examples',
     messages: [
-      { role: 'assistant', content: { type: 'text', text: 'tasks_list_projects {}' } },
-      { role: 'assistant', content: { type: 'text', text: 'tasks_list { "project_id": "kotadb", "status": "pending", "priority": "high", "limit": 5 }' } },
-      { role: 'assistant', content: { type: 'text', text: 'tasks_get { "project_id": "kotadb", "task_id": "task-abc123" }' } },
-      { role: 'assistant', content: { type: 'text', text: 'tasks_create { "project_id": "kotadb", "title": "Add rate limiting", "description": "Implement rate limiting for API endpoints", "priority": "high", "tags": { "model": "sonnet" } }' } },
-      { role: 'assistant', content: { type: 'text', text: 'tasks_update { "project_id": "kotadb", "task_id": "task-abc123", "priority": "high" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_lineup {}' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_set_lineup { "tricks": [{ "code": "9-1" }, { "code": "9-5" }, { "code": "8-4" }] }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_add_run { "date": "2025-10-02", "tricks": [{ "code": "9-1", "attempts": [{ "durationSeconds": 42 }] }, { "code": "9-5", "attempts": [{ "durationSeconds": 55 }] }] }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_list_runs { "date": "2025-10-02" }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_trick_stats { "trick_code": "9-1", "days": 30 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_run_stats { "days": 14 }' } },
+      { role: 'assistant', content: { type: 'text', text: 'kwc_get_trend { "trick_code": "8-4", "days": 60 }' } },
     ],
   }));
 
   // Connect after tools are registered
   await mcp.connect(transport);
 
-  // Wire HTTP transport to Express routes (main MCP endpoint - full access)
+  // Wire HTTP transport to Express routes
   app.get('/mcp', (req, res) => transport.handleRequest(req as any, res as any));
   app.post('/mcp', (req, res) => transport.handleRequest(req as any, res as any, (req as any).body));
   app.delete('/mcp', (req, res) => transport.handleRequest(req as any, res as any));
-
-  // Isolated MCP server for external agents (tasks-only access)
-  const agentsMcp = new McpServer({
-    name: 'kota-agents-gateway',
-    version: '1.0.0',
-  }, {
-    instructions: [
-      'KOTA Agents Gateway - Tasks-only MCP endpoint for external agents',
-      '- This endpoint provides isolated access to task queue management',
-      '- Only the Tasks handler is exposed (tasks_list_projects, tasks_list, tasks_get, tasks_create, tasks_update, tasks_delete)',
-      '- Requires Bearer token authentication (MCP_AGENTS_API_KEY)',
-      '- Use this endpoint for cross-project agent communication',
-    ].join('\n')
-  });
-
-  // Register only the Tasks handler for agents
-  const agentsTasksHandler = new TasksHandler({ logger, config });
-  for (const spec of agentsTasksHandler.getTools()) {
-    const name = `${agentsTasksHandler.prefix}_${spec.action}`;
-    agentsMcp.registerTool(name, {
-      description: spec.description,
-      inputSchema: spec.inputSchema,
-      outputSchema: spec.outputSchema,
-    }, async (args: any, extra) => {
-      const res = await agentsTasksHandler.execute(spec.action, args ?? {});
-      logger.debug({ tool: name, args, sessionId: extra?.sessionId, endpoint: 'agents' }, 'Agent tool executed');
-      return res;
-    });
-    logger.info({ tool: name, endpoint: '/mcp/agents' }, 'Agent tool registered');
-  }
-
-  // Create separate transport for agents endpoint
-  const agentsTransport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
-
-  await agentsMcp.connect(agentsTransport);
-
-  // Wire agents endpoint with required API key authentication
-  const agentsAuth = requiredAuthMiddleware(config.MCP_AGENTS_API_KEY);
-  app.get('/mcp/agents', agentsAuth, (req, res) => agentsTransport.handleRequest(req as any, res as any));
-  app.post('/mcp/agents', agentsAuth, (req, res) => agentsTransport.handleRequest(req as any, res as any, (req as any).body));
-  app.delete('/mcp/agents', agentsAuth, (req, res) => agentsTransport.handleRequest(req as any, res as any));
-
-  logger.info({
-    endpoint: '/mcp/agents',
-    authenticated: Boolean(config.MCP_AGENTS_API_KEY),
-    handler: 'tasks'
-  }, 'Agents MCP endpoint configured');
 
   // Error handling
   app.use(errorMiddleware);

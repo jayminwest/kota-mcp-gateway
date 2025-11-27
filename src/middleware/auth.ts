@@ -12,17 +12,3 @@ export function optionalAuthMiddleware(token?: string) {
   };
 }
 
-export function requiredAuthMiddleware(token?: string) {
-  return function auth(req: Request, res: Response, next: NextFunction) {
-    if (!token) {
-      return res.status(500).json({ error: 'Server configuration error: API key not configured' });
-    }
-    const authz = req.headers.authorization || '';
-    const provided = authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : undefined;
-    if (provided !== token) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or missing API key' });
-    }
-    return next();
-  };
-}
-
