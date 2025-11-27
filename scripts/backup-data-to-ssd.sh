@@ -8,19 +8,39 @@ TARGET_ROOT="${VOLUME_PATH}/backups"
 TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
 TARGET_DIR="${TARGET_ROOT}/${TIMESTAMP}"
 
-if [[ ! -d "${VOLUME_PATH}" ]]; then
-  echo "kota_ssd volume is not mounted at ${VOLUME_PATH}" >&2
-  exit 1
-fi
+# Wait up to 5 minutes for volume to be available (useful after system wake)
+MAX_RETRIES=30
+RETRY_INTERVAL=10
+retry_count=0
+
+while [[ $retry_count -lt $MAX_RETRIES ]]; do
+  # Check if volume exists and is writable (not just a mount point directory)
+  if [[ -d "${VOLUME_PATH}" ]] && /usr/bin/touch "${VOLUME_PATH}/.backup_test" 2>/dev/null; then
+    /bin/rm -f "${VOLUME_PATH}/.backup_test"
+    break
+  fi
+
+  retry_count=$((retry_count + 1))
+  if [[ $retry_count -lt $MAX_RETRIES ]]; then
+    echo "Volume not ready, waiting ${RETRY_INTERVAL}s (attempt ${retry_count}/${MAX_RETRIES})..." >&2
+    /bin/sleep ${RETRY_INTERVAL}
+  else
+    echo "kota_ssd volume is not available after ${MAX_RETRIES} attempts" >&2
+    exit 1
+  fi
+done
+
+echo "Volume ${VOLUME_PATH} is available"
 
 if [[ ! -d "${SOURCE_DIR}" ]]; then
   echo "Source data directory not found at ${SOURCE_DIR}" >&2
   exit 1
 fi
 
-mkdir -p "${TARGET_DIR}" >/dev/null 2>&1
+/bin/mkdir -p "${TARGET_DIR}"
 
-rsync -a --delete "${SOURCE_DIR}/" "${TARGET_DIR}/" \
+# Use full path to rsync for cron compatibility
+/usr/bin/rsync -a --delete "${SOURCE_DIR}/" "${TARGET_DIR}/" \
   --exclude='.DS_Store' \
   --exclude='Thumbs.db'
 

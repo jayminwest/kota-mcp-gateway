@@ -12,17 +12,6 @@ const ConfigSchema = z.object({
 
   DATA_DIR: z.string().default('data'),
   KNOWLEDGE_BASE_PATH: z.string().default('data/knowledge'),
-  KWC_TIMEZONE: z
-    .string()
-    .default('America/Los_Angeles')
-    .superRefine((value, ctx) => {
-      if (!isValidTimeZone(value)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Invalid IANA timezone: ${value}`,
-        });
-      }
-    }),
 
   GMAIL_CLIENT_ID: z.string().optional(),
   GMAIL_CLIENT_SECRET: z.string().optional(),
@@ -72,6 +61,7 @@ const ConfigSchema = z.object({
   SPOTIFY_TOKEN_EXPIRES_AT: z.coerce.number().optional(),
 
   MCP_AUTH_TOKEN: z.string().optional(),
+  MCP_AGENTS_API_KEY: z.string().optional(),
 
   // GitHub
   GITHUB_TOKEN: z.string().optional(),

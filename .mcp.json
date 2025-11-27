@@ -1,8 +1,11 @@
 {
   "mcpServers": {
-    "kota": {
+    "kotadb": {
       "type": "http",
-      "url": "http://localhost:8081/mcp"
+      "url": "https://api.kotadb.io/mcp",
+      "headers": {
+        "Authorization": "Bearer kota_free_K9T57aCmYAUl_9a930050548974ac937d9ed58ab5a83d0184"
+      }
     }
   }
 }

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KOTA Tasks Monitor</title>
+  <link rel="stylesheet" href="/tasks/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>KOTA Tasks Monitor</h1>
+    <p>Monitor and interact with the AI Developer Workflows task queue across all projects.</p>
+  </header>
+  <main>
+    <section id="projects-section">
+      <h2>Projects</h2>
+      <p class="section-hint">Select a project to view and manage its tasks.</p>
+      <div id="projects-list" class="project-buttons"></div>
+    </section>
+
+    <section id="stats-section" style="display: none;">
+      <h2 id="project-title">Project Overview</h2>
+      <div class="overview-grid" id="stats-grid">
+        <div class="overview-item">
+          <span class="label">Pending</span>
+          <span class="value" id="stat-pending">-</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Claimed</span>
+          <span class="value" id="stat-claimed">-</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">In Progress</span>
+          <span class="value" id="stat-in-progress">-</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Completed</span>
+          <span class="value" id="stat-completed">-</span>
+        </div>
+        <div class="overview-item">
+          <span class="label">Failed</span>
+          <span class="value" id="stat-failed">-</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="controls-section" style="display: none;">
+      <h2>Manage Tasks</h2>
+      <div class="controls">
+        <label>
+          Filter by Status:
+          <select id="status-filter">
+            <option value="all">All</option>
+            <option value="pending" selected>Pending</option>
+            <option value="claimed">Claimed</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+        </label>
+        <label>
+          Priority:
+          <select id="priority-filter">
+            <option value="all">All</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+        <button id="refresh-btn">Refresh</button>
+        <button id="create-task-btn">+ Create Task</button>
+      </div>
+    </section>
+
+    <section id="tasks-section" style="display: none;">
+      <h2>Tasks</h2>
+      <div id="tasks-list" class="tasks-list"></div>
+      <div id="empty-state" style="display: none;">
+        <p class="section-hint">No tasks found with the selected filters.</p>
+      </div>
+    </section>
+
+    <section id="create-section" style="display: none;">
+      <h2>Create New Task</h2>
+      <form id="create-task-form">
+        <div class="form-row">
+          <label>
+            Title <span class="required">*</span>
+            <input type="text" name="title" id="task-title" required maxlength="200" placeholder="Brief task description" />
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Description <span class="required">*</span>
+            <textarea name="description" id="task-description" required rows="6" maxlength="5000" placeholder="Detailed task requirements and context"></textarea>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Priority
+            <select name="priority" id="task-priority">
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label>
+            Worktree (optional)
+            <input type="text" name="worktree" id="task-worktree" placeholder="e.g., feat-new-feature" />
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            Tags (JSON format, optional)
+            <textarea name="tags" id="task-tags" rows="3" placeholder='{"model": "sonnet", "workflow": "complex"}'></textarea>
+          </label>
+        </div>
+        <div class="button-row">
+          <button type="submit">Create Task</button>
+          <button type="button" id="cancel-create-btn">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="messages" role="status" aria-live="polite"></div>
+
+  <script src="/tasks/app.js"></script>
+</body>
+</html>
