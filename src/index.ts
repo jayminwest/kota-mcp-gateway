@@ -43,6 +43,9 @@ import { generateSpotifyState, getSpotifyAuthUrl, exchangeSpotifyCode, loadSpoti
 import { WebhookManager } from './webhooks/manager.js';
 import { loadWebhookConfig } from './utils/webhook-config.js';
 import { AttentionConfigService, AttentionPipeline, CodexClassificationAgent, DispatchManager, SlackDispatchTransport } from './attention/index.js';
+import { KotaEntryPointHandler } from './handlers/kota-entry-point.js';
+import { SimpleContextBundleRegistry } from './contexts/registry.js';
+import { startupBundle } from './contexts/startup.js';
 
 function asyncHandler<
   T extends (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
@@ -58,6 +61,7 @@ interface BundleDefinition {
   factory: () => BaseHandler;
   autoEnable?: boolean;
   tags?: string[];
+  exposeTools?: boolean;  // default: true for backward compat
 }
 
 class BundleRegistry {
@@ -142,6 +146,16 @@ class BundleRegistry {
 
   private registerHandler(bundleKey: string, handler: BaseHandler): string[] {
     const registered: string[] = [];
+    const def = this.definitions.get(bundleKey);
+
+    // Only register tools with MCP if exposeTools is true (default)
+    const shouldExpose = def?.exposeTools !== false;
+
+    if (!shouldExpose) {
+      this.opts.logger.info({ bundle: bundleKey }, 'Bundle enabled (tools not exposed to MCP)');
+      return registered;
+    }
+
     const prefixes = [handler.prefix, ...(handler.aliases ?? [])];
     const uniquePrefixes = Array.from(new Set(prefixes));
     for (const spec of handler.getTools()) {
@@ -553,6 +567,11 @@ async function main() {
   }
 
   const registry = new BundleRegistry({ logger, mcp, disabledBundles });
+
+  // Create context bundle registry and register bundles
+  const contextBundleRegistry = new SimpleContextBundleRegistry();
+  contextBundleRegistry.register(startupBundle);
+
   const make = (HandlerCtor: any, extra: Record<string, unknown> = {}) => () =>
     new HandlerCtor({ logger, config, ...extra });
 
@@ -566,11 +585,25 @@ async function main() {
 
   const bundleDefinitions: BundleDefinition[] = [
     {
+      key: 'kota_entry_point',
+      description: 'Unified discovery and invocation layer',
+      autoEnable: true,
+      factory: () => new KotaEntryPointHandler({
+        logger,
+        config,
+        bundleRegistry: registry,
+        contextRegistry: contextBundleRegistry,
+      }),
+      tags: ['core', 'entry_point'],
+      exposeTools: true,  // ONLY kota_entry_point exposes tools
+    },
+    {
       key: 'toolkit',
       description: 'Enable optional handler bundles',
       autoEnable: true,
       factory: make(ToolkitHandler, { toolkit: toolkitApi }),
       tags: ['core'],
+      exposeTools: false,  // Don't expose toolkit tools
     },
     {
       key: 'gmail',
@@ -578,6 +611,7 @@ async function main() {
       autoEnable: true,
       factory: make(GmailHandler),
       tags: ['core', 'google'],
+      exposeTools: false,  // Don't expose gmail tools
     },
     {
       key: 'calendar',
@@ -585,6 +619,7 @@ async function main() {
       autoEnable: true,
       factory: make(CalendarHandler),
       tags: ['core', 'google'],
+      exposeTools: false,  // Don't expose calendar tools
     },
     {
       key: 'memory',
@@ -592,6 +627,7 @@ async function main() {
       autoEnable: true,
       factory: make(MemoryHandler),
       tags: ['core'],
+      exposeTools: false,  // Don't expose memory tools
     },
     {
       key: 'daily',
@@ -599,6 +635,7 @@ async function main() {
       autoEnable: true,
       factory: make(DailyHandler),
       tags: ['core', 'health'],
+      exposeTools: false,  // Don't expose daily tools
     },
     {
       key: 'context_snapshot',
@@ -606,6 +643,7 @@ async function main() {
       autoEnable: true,
       factory: make(ContextSnapshotHandler),
       tags: ['core', 'automation'],
+      exposeTools: false,  // Don't expose context_snapshot tools
     },
     {
       key: 'content_calendar',
@@ -613,6 +651,7 @@ async function main() {
       autoEnable: true,
       factory: make(ContentCalendarHandler),
       tags: ['core', 'planning'],
+      exposeTools: false,  // Don't expose content_calendar tools
     },
     {
       key: 'whoop',
@@ -620,6 +659,7 @@ async function main() {
       autoEnable: true,
       factory: make(WhoopHandler),
       tags: ['optional', 'health'],
+      exposeTools: false,  // Don't expose whoop tools
     },
     {
       key: 'kasa',
@@ -627,6 +667,7 @@ async function main() {
       autoEnable: true,
       factory: make(KasaHandler),
       tags: ['optional', 'iot'],
+      exposeTools: false,  // Don't expose kasa tools
     },
     {
       key: 'kraken',
@@ -634,6 +675,7 @@ async function main() {
       autoEnable: true,
       factory: make(KrakenHandler),
       tags: ['optional', 'finance'],
+      exposeTools: false,  // Don't expose kraken tools
     },
     {
       key: 'rize',
@@ -641,6 +683,7 @@ async function main() {
       autoEnable: true,
       factory: make(RizeHandler),
       tags: ['optional', 'productivity'],
+      exposeTools: false,  // Don't expose rize tools
     },
     {
       key: 'slack',
@@ -648,6 +691,7 @@ async function main() {
       autoEnable: true,
       factory: make(SlackHandler),
       tags: ['optional', 'communication'],
+      exposeTools: false,  // Don't expose slack tools
     },
     {
       key: 'spotify',
@@ -655,6 +699,7 @@ async function main() {
       autoEnable: true,
       factory: make(SpotifyHandler),
       tags: ['optional', 'media'],
+      exposeTools: false,  // Don't expose spotify tools
     },
     {
       key: 'github',
@@ -662,6 +707,7 @@ async function main() {
       autoEnable: true,
       factory: make(GitHubHandler),
       tags: ['optional', 'engineering'],
+      exposeTools: false,  // Don't expose github tools
     },
     {
       key: 'stripe',
@@ -669,6 +715,7 @@ async function main() {
       autoEnable: true,
       factory: make(StripeHandler),
       tags: ['optional', 'finance'],
+      exposeTools: false,  // Don't expose stripe tools
     },
     {
       key: 'workspace',
@@ -676,6 +723,7 @@ async function main() {
       autoEnable: true,
       factory: make(WorkspaceHandler),
       tags: ['optional', 'knowledge'],
+      exposeTools: false,  // Don't expose workspace tools
     },
     {
       key: 'webhooks',
@@ -683,6 +731,7 @@ async function main() {
       autoEnable: true,
       factory: make(WebhooksHandler),
       tags: ['optional', 'integration'],
+      exposeTools: false,  // Don't expose webhooks tools
     },
     {
       key: 'tasks',
@@ -690,6 +739,7 @@ async function main() {
       autoEnable: true,
       factory: make(TasksHandler),
       tags: ['core', 'adw'],
+      exposeTools: false,  // Don't expose tasks tools
     },
   ];
 
