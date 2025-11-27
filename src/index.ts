@@ -43,6 +43,9 @@ import { generateSpotifyState, getSpotifyAuthUrl, exchangeSpotifyCode, loadSpoti
 import { WebhookManager } from './webhooks/manager.js';
 import { loadWebhookConfig } from './utils/webhook-config.js';
 import { AttentionConfigService, AttentionPipeline, CodexClassificationAgent, DispatchManager, SlackDispatchTransport } from './attention/index.js';
+import { KotaEntryPointHandler } from './handlers/kota-entry-point.js';
+import { SimpleContextBundleRegistry } from './contexts/registry.js';
+import { startupBundle } from './contexts/startup.js';
 
 function asyncHandler<
   T extends (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
@@ -553,6 +556,11 @@ async function main() {
   }
 
   const registry = new BundleRegistry({ logger, mcp, disabledBundles });
+
+  // Create context bundle registry and register bundles
+  const contextBundleRegistry = new SimpleContextBundleRegistry();
+  contextBundleRegistry.register(startupBundle);
+
   const make = (HandlerCtor: any, extra: Record<string, unknown> = {}) => () =>
     new HandlerCtor({ logger, config, ...extra });
 
@@ -565,6 +573,18 @@ async function main() {
   };
 
   const bundleDefinitions: BundleDefinition[] = [
+    {
+      key: 'kota_entry_point',
+      description: 'Unified discovery and invocation layer',
+      autoEnable: true,
+      factory: () => new KotaEntryPointHandler({
+        logger,
+        config,
+        bundleRegistry: registry,
+        contextRegistry: contextBundleRegistry,
+      }),
+      tags: ['core', 'entry_point'],
+    },
     {
       key: 'toolkit',
       description: 'Enable optional handler bundles',
