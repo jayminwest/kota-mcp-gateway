@@ -1,31 +1,23 @@
 # Install & Prime
 
-Initialize the KOTA MCP Gateway for local development.
-
 ## Read
-
-- .env.example (never read .env)
-- README.md (setup instructions and architecture)
+.env.example (never read .env)
 
 ## Read and Execute
-
 .claude/commands/prime.md
 
 ## Run
-
-1. Copy environment template: `cp .env.example .env`
-2. Install gateway dependencies: `npm ci`
-3. Compile TypeScript build output: `npm run build`
-4. Verify installation: `npm run typecheck && npm run lint`
+- Remove the existing git remote: `git remote remove origin`
+- Initialize a new git repository: `git init`
+- Run `cp .env.example .env`
+- Install gateway dependencies: `npm ci`
+- Compile the TypeScript build output: `npm run build`
 
 ## Report
-
 - Output the work you've just done in a concise bullet point list.
-- Instruct the user to fill out `.env` based on `.env.example`:
-  - Required: `PORT`, `DATA_DIR`, `HEALTH_PATH`
-  - Optional service credentials (Google, WHOOP, Slack, etc.)
-- Note: Gateway can run with minimal config; services requiring auth will be unavailable until credentials are added.
-- Mention next steps:
-  - Start server: `npm start`
-  - Health check: `curl http://localhost:8084/health`
-  - Configure MCP client per README
+- Instruct the user to fill out the root level ./.env based on .env.example.
+- Mention: 'To setup your AFK Agent, be sure to update the remote repo url and push to a new repo so you have access to git issues and git prs:
+  ```
+  git remote add origin <your-new-repo-url>
+  git push -u origin main
+  ```'

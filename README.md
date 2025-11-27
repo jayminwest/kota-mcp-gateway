@@ -5,26 +5,22 @@ Unified Model Context Protocol (MCP) gateway that consolidates KOTA tools behind
 Features
 - Single connection point for MCP clients
 - Dynamic tool registration via handlers
-- Webhook ingestion pipeline that maps external events into daily logs
-- REST API for AI Developer Workflow (ADW) task management
+- Webhook ingestion pipeline that maps external events into daily vitals
 - Health endpoint at `/health`
 - Structured JSON logging with correlation IDs
 - Dockerized with persistent data volume
 - Webhook event storage with MCP tooling for historical review
-- Multi-project support for isolated task queues
 
 Project Structure
 - `src/index.ts` – main server and MCP transport
 - `src/handlers/*` – service handlers (Gmail, Calendar, Whoop, Kraken, Rize, Kasa, Slack)
   - Also: GitHub (activity summaries)
-- `src/routes/*` – REST API routers (Tasks API for ADWs)
 - `src/webhooks/*` – webhook handlers that append to the daily tracker
-- `src/utils/*` – config, logger, database utilities
+- `src/utils/*` – config and logger
 - `src/middleware/*` – error and optional auth middleware
 - `scripts/*` – healthcheck, webhook testing, and macOS launchd installer
-- `data/` – persistent data for tokens/config/databases
+- `data/` – persistent data for tokens/config
 - `docs/handlers` & `docs/webhooks` – per-integration guides
-- `docs/HOME_SERVER_API.md` & `docs/KOTADB_API_REFERENCE.md` – Tasks API documentation
 
 Setup
 1. Copy `.env.example` to `.env` and fill any required keys.
@@ -35,16 +31,16 @@ Setup
 
 Endpoints
 - `GET /health` – returns `{ status: 'ok', ... }`
-- `GET /tasks` – Tasks Monitor web UI for managing ADW task queues
-- `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport (full handler access)
-- `GET/POST/DELETE /mcp/agents` – Isolated MCP endpoint for external agents (tasks-only, requires API key)
-- `GET /auth/github/status` – GitHub token and rate status
-- `/api/tasks/:project_id/*` – Task management API for AI Developer Workflows (see [docs/KOTADB_API_REFERENCE.md](docs/KOTADB_API_REFERENCE.md))
+- `GET /kwc` – Kendama run logger UI (lineup editor + run capture)
+- `GET /kwc/stats` – Kendama analytics dashboard (consistency + trends)
+- `GET /kwc/api/lineup` | `PUT /kwc/api/lineup` – manage Kendama lineup JSON
+- `GET /kwc/api/runs` | `POST /kwc/api/runs` – list or append Kendama run history
+- `PUT /kwc/api/runs/:recordedAt` – overwrite a run's attempts (fix mis-entered times)
+- `GET /kwc/api/analytics` – aggregate Kendama stats (query: `days`, `window`)
+- `GET/POST/DELETE /mcp` – MCP Streamable HTTP transport
+ - `GET /auth/github/status` – GitHub token and rate status
 
 MCP Client Config
-
-Full access (local use):
-```json
 {
   "mcpServers": {
     "kota": {
@@ -52,55 +48,11 @@ Full access (local use):
       "args": [
         "-y",
         "@modelcontextprotocol/server-http-client",
-        "http://localhost:8084/mcp"
+        "http://localhost:8084"
       ]
     }
   }
 }
-```
-
-External agents (tasks-only, requires API key):
-```json
-{
-  "mcpServers": {
-    "kota-agents": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-http-client",
-        "http://localhost:8084/mcp/agents"
-      ],
-      "env": {
-        "HTTP_AUTHORIZATION": "Bearer your_api_key_here"
-      }
-    }
-  }
-}
-```
-
-See [docs/AGENT_SETUP_GUIDE.md](docs/AGENT_SETUP_GUIDE.md) for external agent configuration.
-
-Context Management
-
-Control which handler bundles load at startup by defining contexts in `~/.kota/context.json`:
-
-```json
-{
-  "active_contexts": ["work", "health"],
-  "disabled_bundles": ["spotify", "kasa"],
-  "updated": "2025-11-23T17:45:00.000Z"
-}
-```
-
-**Available Bundle Keys:** toolkit, gmail, calendar, memory, daily, context_snapshot, content_calendar, whoop, kasa, kraken, rize, slack, spotify, github, stripe, workspace, webhooks, tasks
-
-**MCP Tools:**
-- `toolkit_get_context` – View current context configuration
-- `toolkit_set_context` – Update contexts and disabled bundles
-- `toolkit_disable_bundle` – Disable a bundle (persisted)
-- `toolkit_enable_bundle` – Enable a bundle (with `persist: true` to remove from disabled list)
-
-Restart the gateway after context changes to apply bundle enable/disable updates.
 
 Docker
 - `docker-compose up --build -d`
@@ -133,3 +85,8 @@ Backups
 
 Notes
 - Handlers added/expanded incrementally; see docs/handlers for per-service guides.
+- Kendama run data lives in `data/kota_kwc/{lineup,runs}.json` alongside other persisted storage.
+- KWC lineup scores auto-derive from the trick level (e.g., `9-1` counts as 9 points).
+- KWC MCP tools offer lineup CRUD plus analytics (`kwc_get_trick_stats`, `kwc_get_run_stats`, `kwc_get_trend`).
+- KWC web UI includes `/kwc/stats` analytics view powered by the same MCP calculations.
+- KWC timestamps default to Pacific Time; set `KWC_TIMEZONE` to another IANA zone if needed.

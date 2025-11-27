@@ -17,6 +17,8 @@ The daily handler captures holistic day logs covering nutrition, supplements, su
 - `daily_delete_day { date }`
   - Removes the stored log for the date.
 
+> Legacy aliases (`nutrition_*`, `vitals_*`) have been retired to keep the MCP manifest lean—use the `daily_*` tools directly.
+
 ## Daily Template
 
 The template keeps each day consistent and LLM-friendly. Daily constants live in the checklist; only deviations belong in `exceptions`. Meals are short names—no macros unless they matter that day.

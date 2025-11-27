@@ -1,36 +1,27 @@
 # Generate Git Branch Name
 
-Generate a concise Git branch name for work on the KOTA MCP Gateway, following the repository's branch naming conventions.
+Based on the `Instructions` below, take the `Variables` and follow the `Run` section to generate a concise Git branch name for work on the KOTA MCP Gateway. Then follow the `Report` section to report the results of your work.
 
 ## Variables
-
-issue_type: $1
-issue_number: $2
+issue_class: $1
+adw_id: $2
 issue: $3
 
 ## Instructions
-
-- Generate a branch name in the format: `<issue_type>/<issue_number>-<concise_slug>`
-- The `<issue_type>` should be: `feature`, `bug`, or `chore`
-- The `<concise_slug>` should be:
+- Generate a branch name in the format: `<issue_class>-<issue_number>-<adw_id>-<concise_name>`
+- The `<concise_name>` should be:
   - 3-6 words maximum
   - All lowercase
   - Words separated by hyphens
   - Descriptive of the primary change within this gateway
   - No special characters except hyphens
 - Extract the issue number, title, and body from the issue JSON
-- Examples:
-  - `feature/123-add-spotify-handler`
-  - `bug/456-fix-whoop-ingestion`
-  - `chore/789-update-mcp-sdk`
 
 ## Run
-
-1. `git fetch --all --prune` (sync remote refs)
-2. `git checkout develop` (switch to develop branch)
-3. `git pull origin develop` (pull latest changes from develop)
-4. `git checkout -b <branch_name>` (create and switch to new branch)
+Run `git checkout main` to switch to the main branch
+Run `git pull` to pull the latest changes from the main branch
+Run `git checkout -b <branch_name>` to create and switch to the new branch
 
 ## Report
-
+After generating the branch name:
 Return ONLY the branch name that was created (no other text)
