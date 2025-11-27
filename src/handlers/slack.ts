@@ -212,17 +212,22 @@ export class SlackHandler extends BaseHandler {
 
   private buildMessageContent(message: any, userNames: Record<string, string>): string {
     const parts: string[] = [];
-    if (typeof message.text === 'string' && message.text.trim()) {
-      parts.push(this.decodeSlackFormatting(message.text.trim(), userNames));
-    }
 
+    // Prefer blocks over text to avoid duplication (text is often a fallback for blocks)
+    let hasBlocks = false;
     if (Array.isArray(message.blocks)) {
       const blockTexts = this.extractBlockText(message.blocks)
         .map((text) => this.decodeSlackFormatting(text, userNames))
         .filter((text) => !!text.trim());
       if (blockTexts.length) {
         parts.push(blockTexts.join('\n'));
+        hasBlocks = true;
       }
+    }
+
+    // Only use message.text if we didn't get content from blocks
+    if (!hasBlocks && typeof message.text === 'string' && message.text.trim()) {
+      parts.push(this.decodeSlackFormatting(message.text.trim(), userNames));
     }
 
     if (Array.isArray(message.attachments)) {

@@ -10,7 +10,6 @@ import type {
   ContextResult,
   HandlerRegistry
 } from '../types/context.js';
-import { pacificNowIso } from '../utils/time.js';
 
 /**
  * Discovery filter schema
@@ -26,6 +25,7 @@ const DiscoverFilterSchema = z.object({
 const DiscoverSchema = z.object({
   query: z.string().optional().describe('Search term to match bundle/action names, descriptions, or tags'),
   filter: DiscoverFilterSchema.optional().describe('Filter criteria for bundles'),
+  detailed: z.boolean().optional().describe('Include full Zod schemas for all actions (default: false)'),
 }).strict();
 
 /**
@@ -174,6 +174,7 @@ export class KotaEntryPointHandler extends BaseHandler {
         inputSchema: {
           query: DiscoverSchema.shape.query,
           filter: DiscoverSchema.shape.filter,
+          detailed: DiscoverSchema.shape.detailed,
         },
       },
       {
@@ -227,15 +228,20 @@ export class KotaEntryPointHandler extends BaseHandler {
   private async handleDiscover(raw: unknown): Promise<CallToolResult> {
     const parsed = this.parseArgs(DiscoverSchema, raw);
 
-    // Start with all metadata
-    let results = Array.from(this.metadataGenerator.generateAll().values());
+    // Use summary mode by default, detailed mode only if requested
+    const useSummary = !parsed.detailed;
+    let results = Array.from(
+      useSummary
+        ? this.metadataGenerator.generateAllSummary().values()
+        : this.metadataGenerator.generateAll().values()
+    );
 
     // Apply category filter if specified
     if (parsed.filter?.category && parsed.filter.category !== 'all') {
       if (parsed.filter.category === 'tool') {
         // Tool bundles are those currently in the system (all current bundles are tools)
         // Context bundles would be a separate registry
-        results = results;
+        // No-op: results already contains tool bundles
       } else if (parsed.filter.category === 'context') {
         // For now, context bundles come from the context registry
         // We'll add those results separately

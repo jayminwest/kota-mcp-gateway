@@ -63,13 +63,11 @@ export const startupBundle: ContextBundle = {
     ] = await Promise.allSettled([
       // Fetch work context memory
       handlers.execute('memory', 'get', {
-        category: 'state',
-        key: 'current_work_context',
+        query: 'current_work_context',
       }),
       // Fetch conversation notes
-      handlers.execute('memory', 'list', {
-        category: 'conversation_notes',
-        limit: 5,
+      handlers.execute('memory', 'get', {
+        query: 'conversation_notes',
       }),
       // Fetch today's calendar events
       handlers.execute('calendar', 'list_events', {

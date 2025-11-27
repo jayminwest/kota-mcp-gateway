@@ -10,8 +10,8 @@ export interface BundleActionMetadata {
   description: string;
   /** Fully-qualified tool name (e.g., 'memory_set', 'gmail_search') */
   tool_name: string;
-  /** JSON schema defining the input parameters */
-  inputSchema: any;
+  /** JSON schema defining the input parameters (omitted in summary mode) */
+  inputSchema?: any;
 }
 
 /**
@@ -95,7 +95,27 @@ export class BundleMetadataGenerator {
     const bundles = this.registry.listBundles();
 
     for (const bundleInfo of bundles) {
-      const metadata = this.generateBundleMetadata(bundleInfo);
+      const metadata = this.generateBundleMetadata(bundleInfo, false);
+      if (metadata) {
+        result.set(bundleInfo.key, metadata);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Generates lightweight summary metadata for all bundles (without Zod schemas).
+   * Reduces token overhead by omitting inputSchema from action metadata.
+   *
+   * @returns Map of bundle keys to their summary metadata
+   */
+  generateAllSummary(): Map<string, BundleMetadata> {
+    const result = new Map<string, BundleMetadata>();
+    const bundles = this.registry.listBundles();
+
+    for (const bundleInfo of bundles) {
+      const metadata = this.generateBundleMetadata(bundleInfo, true);
       if (metadata) {
         result.set(bundleInfo.key, metadata);
       }
@@ -192,15 +212,19 @@ export class BundleMetadataGenerator {
    * Generates metadata for a single bundle.
    *
    * @param bundleInfo - Bundle info from registry.listBundles()
+   * @param summary - If true, omit Zod schemas from action metadata
    * @returns Bundle metadata or null if handler not accessible
    */
-  private generateBundleMetadata(bundleInfo: {
-    key: string;
-    description: string;
-    enabled: boolean;
-    tags: string[];
-  }): BundleMetadata | null {
-    const actions = this.extractActions(bundleInfo.key);
+  private generateBundleMetadata(
+    bundleInfo: {
+      key: string;
+      description: string;
+      enabled: boolean;
+      tags: string[];
+    },
+    summary = false
+  ): BundleMetadata | null {
+    const actions = this.extractActions(bundleInfo.key, summary);
 
     return {
       key: bundleInfo.key,
@@ -217,9 +241,10 @@ export class BundleMetadataGenerator {
    * Extracts action metadata from a bundle's handler.
    *
    * @param bundleKey - The bundle key to extract actions from
+   * @param summary - If true, omit inputSchema from action metadata
    * @returns Array of action metadata
    */
-  private extractActions(bundleKey: string): BundleActionMetadata[] {
+  private extractActions(bundleKey: string, summary = false): BundleActionMetadata[] {
     try {
       // Access the enabled handlers map via reflection
       const enabledMap = (this.registry as any).enabled as Map<string, { handler: any; tools: string[] }> | undefined;
@@ -242,16 +267,22 @@ export class BundleMetadataGenerator {
       const actions: BundleActionMetadata[] = [];
 
       for (const spec of toolSpecs) {
-        actions.push({
+        const action: BundleActionMetadata = {
           name: spec.action,
           description: spec.description || '',
           tool_name: `${primaryPrefix}_${spec.action}`,
-          inputSchema: this.normalizeInputSchema(spec.inputSchema),
-        });
+        };
+
+        // Only include schema in detailed mode
+        if (!summary) {
+          action.inputSchema = this.normalizeInputSchema(spec.inputSchema);
+        }
+
+        actions.push(action);
       }
 
       return actions;
-    } catch (err) {
+    } catch {
       // If we can't access the handler, return empty array
       return [];
     }
