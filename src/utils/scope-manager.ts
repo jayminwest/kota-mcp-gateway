@@ -45,18 +45,22 @@ export interface RefreshResult {
   error?: string;
 }
 
+export type DataFetcher = (toolName: string, args: any) => Promise<any>;
+
 export class ScopeManager {
   private logger: Logger;
   private config: HandlerConfig;
   private scopesDir: string;
   private cache: Map<string, { scope: LoadedScope; timestamp: number }>;
   private cacheTTL: number = 5 * 60 * 1000; // 5 minutes
+  private fetchData?: DataFetcher;
 
-  constructor(opts: { logger: Logger; config: HandlerConfig }) {
+  constructor(opts: { logger: Logger; config: HandlerConfig; fetchData?: DataFetcher }) {
     this.logger = opts.logger;
     this.config = opts.config;
     this.scopesDir = path.join(os.homedir(), 'kota_md', 'scopes');
     this.cache = new Map();
+    this.fetchData = opts.fetchData;
   }
 
   /**
@@ -168,7 +172,7 @@ export class ScopeManager {
   }
 
   /**
-   * Load a scope with context (for MVP: returns static config without executing fetchers)
+   * Load a scope with context
    */
   async loadScope(name: string): Promise<LoadedScope | null> {
     // Check cache
@@ -183,17 +187,35 @@ export class ScopeManager {
       return null;
     }
 
+    // Execute data fetchers if available
+    let context: Record<string, any>;
+    if (this.fetchData && config.data_sources) {
+      try {
+        context = await this.executeFetchers(config.data_sources);
+        context.overview = config.overview || '';
+      } catch (error) {
+        this.logger.error({ error, name }, 'Failed to execute data fetchers');
+        // Fall back to static config on error
+        context = {
+          overview: config.overview || '',
+          data_sources_config: config.data_sources,
+          error: 'Failed to execute data fetchers',
+        };
+      }
+    } else {
+      // No fetch function or no data sources: return static config
+      context = {
+        overview: config.overview || '',
+        data_sources_config: config.data_sources || {},
+      };
+    }
+
     const loaded: LoadedScope = {
       name: config.scope.name,
       loaded_at: new Date().toISOString(),
       last_modified: config.scope.last_modified,
       modified_by: config.scope.modified_by,
-      context: {
-        overview: config.overview || '',
-        // For MVP: return static config structure
-        // Phase 4 will execute data fetchers
-        data_sources_config: config.data_sources || {},
-      },
+      context,
       exposed_tools: config.exposed_tools || [],
       file_path: this.resolveScopePath(name),
     };
@@ -240,6 +262,92 @@ export class ScopeManager {
         error: String(error),
       };
     }
+  }
+
+  /**
+   * Execute data fetchers and build context
+   */
+  async executeFetchers(dataSourcesConfig: Record<string, any>): Promise<Record<string, any>> {
+    if (!this.fetchData) {
+      this.logger.warn('No fetch function available, returning empty context');
+      return {};
+    }
+
+    const context: Record<string, any> = {};
+
+    // Process each data source category
+    for (const [category, config] of Object.entries(dataSourcesConfig)) {
+      try {
+        context[category] = await this.executeCategoryFetchers(category, config);
+      } catch (error) {
+        this.logger.error({ error, category }, `Failed to execute fetchers for category ${category}`);
+        context[category] = {
+          error: `Failed to fetch ${category}: ${String(error)}`,
+        };
+      }
+    }
+
+    return context;
+  }
+
+  /**
+   * Execute fetchers for a specific category
+   */
+  private async executeCategoryFetchers(category: string, config: any): Promise<any> {
+    if (!this.fetchData) {
+      return {};
+    }
+
+    // Handle array of fetchers
+    if (Array.isArray(config)) {
+      const results: Record<string, any> = {};
+      for (const item of config) {
+        if (item.key && item.fetch) {
+          try {
+            results[item.key] = await this.fetchData(item.fetch, item.params || {});
+          } catch (error) {
+            this.logger.warn({ error, key: item.key, fetch: item.fetch }, 'Fetch failed');
+            results[item.key] = { error: String(error) };
+          }
+        } else if (typeof item === 'object' && item.path) {
+          // Handle file references (read file content)
+          try {
+            const filePath = item.path.startsWith('~/')
+              ? path.join(os.homedir(), item.path.slice(2))
+              : item.path;
+            const content = await fs.readFile(filePath, 'utf-8');
+            const excerpt = item.excerpt_length
+              ? content.slice(0, item.excerpt_length)
+              : content;
+            results[item.path] = { path: item.path, excerpt };
+          } catch (error) {
+            this.logger.warn({ error, path: item.path }, 'File read failed');
+            results[item.path] = { error: String(error) };
+          }
+        }
+      }
+      return results;
+    }
+
+    // Handle object of fetchers
+    if (typeof config === 'object' && config !== null) {
+      const results: Record<string, any> = {};
+      for (const [key, value] of Object.entries(config)) {
+        if (typeof value === 'object' && value !== null && 'fetch' in value) {
+          try {
+            results[key] = await this.fetchData((value as any).fetch, (value as any).params || {});
+          } catch (error) {
+            this.logger.warn({ error, key, fetch: (value as any).fetch }, 'Fetch failed');
+            results[key] = { error: String(error) };
+          }
+        } else {
+          results[key] = value;
+        }
+      }
+      return results;
+    }
+
+    return config;
   }
 
   /**
