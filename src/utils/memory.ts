@@ -758,7 +758,7 @@ const timestamp = pacificNowIso();
     };
   }
 
-  async list(): Promise<string[]> {
+  async list(categoryFilter?: MemoryCategory): Promise<string[]> {
     const categories = await this.loadAllCategories();
     const archive = await this.loadArchive();
 
@@ -771,7 +771,8 @@ const timestamp = pacificNowIso();
     }
 
     const keys: string[] = [];
-    for (const category of CATEGORY_NAMES) {
+    const categoriesToList = categoryFilter ? [categoryFilter] : CATEGORY_NAMES;
+    for (const category of categoriesToList) {
       for (const key of Object.keys(categories[category])) {
         keys.push(`${category}:${key}`);
       }

@@ -44,7 +44,7 @@ const SetSchema = z.object({
 }).strip();
 
 const GetSchema = z.object({
-  query: z.string().min(1).describe('Key or fuzzy query to retrieve memory'),
+  query: z.string().min(1).describe('Memory key or search phrase. Exact key match (e.g. "current_work_context") or fuzzy search (e.g. "work context"). Prefix with category for precision (e.g. "state:current_work_context")'),
 }).strip();
 
 const UpdateSchema = z.object({
@@ -54,6 +54,10 @@ const UpdateSchema = z.object({
 
 const DeleteSchema = z.object({
   key: z.string().min(1).describe('Memory key to delete'),
+}).strip();
+
+const ListSchema = z.object({
+  category: CategoryEnum.optional().describe('Optional category filter (preferences, connections, patterns, shortcuts, state)'),
 }).strip();
 
 export class MemoryHandler extends BaseHandler {
@@ -69,7 +73,7 @@ export class MemoryHandler extends BaseHandler {
     return [
       {
         action: 'set',
-        description: 'Persist a memory key/value pair with optional category hint',
+        description: 'Persist key/value pair. Category is optional and auto-inferred from key name. Examples: key="work_hour_limit" → patterns, key="slack_dm_sunil" → connections',
         inputSchema: {
           key: SetSchema.shape.key,
           value: SetSchema.shape.value,
@@ -78,7 +82,7 @@ export class MemoryHandler extends BaseHandler {
       },
       {
         action: 'get',
-        description: 'Retrieve a concise memory entry via direct or fuzzy query',
+        description: 'Retrieve memory entry via key or fuzzy search. Examples: query="current_work_context" (exact), query="work context" (fuzzy). Returns null if no match found with confidence > 0.6.',
         inputSchema: {
           query: GetSchema.shape.query,
         },
@@ -93,8 +97,10 @@ export class MemoryHandler extends BaseHandler {
       },
       {
         action: 'list',
-        description: 'List stored memory keys without values',
-        inputSchema: {},
+        description: 'List stored memory keys in format "category:key". Optionally filter by category. Examples: category="state" returns only state keys, no category returns all keys.',
+        inputSchema: {
+          category: ListSchema.shape.category,
+        },
       },
       {
         action: 'list_archived',
@@ -140,7 +146,7 @@ export class MemoryHandler extends BaseHandler {
         case 'update':
           return await this.handleUpdate(args);
         case 'list':
-          return await this.handleList();
+          return await this.handleList(args);
         case 'list_archived':
           return await this.handleListArchived();
         case 'delete':
@@ -179,8 +185,9 @@ export class MemoryHandler extends BaseHandler {
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 
-  private async handleList(): Promise<CallToolResult> {
-    const keys = await this.store.list();
+  private async handleList(raw?: unknown): Promise<CallToolResult> {
+    const parsed = raw ? this.parseArgs(ListSchema, raw) : { category: undefined };
+    const keys = await this.store.list(parsed.category);
     return { content: [{ type: 'text', text: formatList(keys) }] };
   }
 
