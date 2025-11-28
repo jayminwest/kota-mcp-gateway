@@ -35,40 +35,140 @@ All tools are prefixed with `memory_` when registered through MCP.
 | `memory_set { key, value, category? }` | Persist a key/value pair. | Category is optional; heuristics route keys when omitted. Response includes `created_at`/`last_updated` in the host timezone. |
 | `memory_get { query }` | Retrieve an entry via exact or fuzzy match. | Returns terse JSON with confidence score plus `created_at`/`last_updated` (host timezone). |
 | `memory_update { key, addition }` | Merge new info into an existing entry. | Supports object merge, array append, and string concatenation. Response echoes updated timestamps (host timezone). |
-| `memory_list {}` | List stored active keys only. | Keys are returned as `category:key`. |
+| `memory_list { category? }` | List stored active keys, optionally filtered by category. | Keys are returned as `category:key`. Filter by category (e.g., `"state"`) to see only those keys. |
 | `memory_list_archived {}` | List archived keys. | Keys include timestamp suffix, e.g., `state:project@2025-01-02T...`. |
 | `memory_delete { key }` | Remove an active entry. | Case-insensitive match. Response returns last-known timestamps before deletion (host timezone). |
 | `memory_clear_state {}` | Archive and reset the current state. | Archives each state entry with a timestamped suffix. |
 | `memory_save_conversation_notes { summary, flow?, tone?, highlights?, nextSteps?, additionalContext?, capturedAt?, metadata? }` | Snapshot the active conversation context. | Persists notes under `state:conversation_notes` for quick recall. |
 
+Query Semantics
+---------------
+The `memory_get` action uses fuzzy matching with the following behavior:
+
+1. **Exact key match** (confidence = 1.0):
+   - Query exactly matches a memory key
+   - Example: `query: "current_work_context"` matches key `current_work_context`
+
+2. **Substring match** (confidence ≥ 0.85):
+   - Query is contained in key or vice versa
+   - Example: `query: "work"` matches key `current_work_context`
+
+3. **Fuzzy match** (confidence ≥ 0.6):
+   - Uses Levenshtein distance for similarity
+   - Example: `query: "work contxt"` matches key `work_context` (typo tolerance)
+
+4. **Value search** (confidence × 0.9):
+   - Searches within memory values if key match score < 0.6
+   - Example: `query: "GeoSync"` finds `{"company": "GeoSync"}` in connections
+
+5. **Category prefix** (recommended for precision):
+   - Prefix with category to limit search scope
+   - Example: `query: "state:current_work_context"` searches only state category
+
+Returns `null` if best match has confidence < 0.6. Returns match with highest confidence score.
+
 Example MCP Calls
 -----------------
-```
-# Store a connection (category inferred as "connections")
+
+### Storing Memories
+
+```json
+// Store with explicit category
 memory_set {
   "key": "Sunil",
-  "value": { "name": "Sunil Nagaraj", "company": "GeoSync", "slack_dm": "D098X745TDY" }
+  "value": { "name": "Sunil Nagaraj", "company": "GeoSync", "slack_dm": "D098X745TDY" },
+  "category": "connections"
 }
 
-# Retrieve later via fuzzy query
+// Store with auto-inferred category (contains "preference")
+memory_set {
+  "key": "notification_preferences",
+  "value": { "slack": true, "email": false }
+}
+```
+
+### Retrieving Memories
+
+```json
+// Exact key match (fastest, most reliable)
+memory_get { "query": "notification_preferences" }
+
+// Fuzzy search across keys
 memory_get { "query": "sunil slack" }
 
-# Update an existing guardrail
+// Category-prefixed for precision
+memory_get { "query": "state:current_work_context" }
+```
+
+### Listing Keys
+
+```json
+// List all memory keys
+memory_list {}
+
+// List only state category keys
+memory_list { "category": "state" }
+
+// List only preferences
+memory_list { "category": "preferences" }
+```
+
+### Updating Memories
+
+```json
+// Merge into existing object
 memory_update {
   "key": "work_hour_limit",
   "addition": { "daily_hours": 8, "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri"] }
 }
 
-# Inspect stored keys
-memory_list {}
+// Append to array
+memory_update {
+  "key": "focus_topics",
+  "addition": ["Context bundling", "Memory optimization"]
+}
+```
 
-# Remove stale entries when needed
-memory_delete { "key": "old_campaign" }
+### Common Patterns
 
-# Reset the working slate for today while keeping yesterday's context
+**Check if memory exists before creating:**
+```json
+// 1. Try to get
+memory_get { "query": "project_goals" }
+
+// 2. If null, create
+memory_set {
+  "key": "project_goals",
+  "value": ["Launch MVP", "Gather feedback"],
+  "category": "state"
+}
+```
+
+**List all state entries for cleanup:**
+```json
+// 1. List state keys
+memory_list { "category": "state" }
+
+// 2. Review keys
+// ["state:current_work_context", "state:conversation_notes", ...]
+
+// 3. Clear if needed
 memory_clear_state {}
+```
 
-# Capture conversation notes so another agent can rehydrate context
+**Retrieve with fallback:**
+```json
+// 1. Try exact key
+memory_get { "query": "state:current_work_context" }
+
+// 2. If null, try fuzzy
+memory_get { "query": "work context" }
+
+// 3. If still null, use default value
+```
+
+**Capture conversation notes:**
+```json
 memory_save_conversation_notes {
   "summary": "Reviewed growth metrics and discussed Q2 hiring plan",
   "flow": "Started with ARR review, dug into churn, ended on recruiting needs",
