@@ -92,7 +92,7 @@ Control which handler bundles load at startup by defining contexts in `~/.kota/c
 }
 ```
 
-**Available Bundle Keys:** toolkit, gmail, calendar, memory, daily, context_snapshot, content_calendar, whoop, kasa, kraken, rize, slack, spotify, github, stripe, workspace, webhooks, tasks
+**Available Bundle Keys:** toolkit, kota, gmail, calendar, memory, daily, context_snapshot, content_calendar, whoop, kasa, kraken, rize, slack, spotify, github, stripe, workspace, webhooks, tasks
 
 **MCP Tools:**
 - `toolkit_get_context` – View current context configuration
@@ -101,6 +101,45 @@ Control which handler bundles load at startup by defining contexts in `~/.kota/c
 - `toolkit_enable_bundle` – Enable a bundle (with `persist: true` to remove from disabled list)
 
 Restart the gateway after context changes to apply bundle enable/disable updates.
+
+Context Bundling (KOTA Entry Point)
+
+KOTA provides a self-documenting entry point for scope-based context loading. Instead of loading all context at session start, load specific scopes on-demand to reduce token overhead.
+
+**Quick Start:**
+```typescript
+// List available scopes
+kota.load({ scope: "list" })
+
+// Load a scope
+kota.load({ scope: "GEOSYNC" })
+
+// Load multiple scopes
+kota.load({ scope: ["GEOSYNC", "PERSONAL"] })
+
+// Edit a scope
+kota.edit({
+  scope: "GEOSYNC",
+  modification: { add: { ... } },
+  reason: "Adding new data source"
+})
+
+// Refresh a scope
+kota.refresh({ scope: "GEOSYNC" })
+```
+
+**Scope Configuration:**
+Scopes are defined in YAML files at `~/kota_md/scopes/`. Each scope specifies:
+- Overview and description
+- Data sources to fetch (memories, slack messages, files, etc.)
+- Tools to expose for the scope
+
+Example scopes provided:
+- `geosync.scope.yaml` – Client work context
+- `personal.scope.yaml` – Personal life and health tracking
+- `kotadb.scope.yaml` – Product development context
+
+See [docs/handlers/KOTA.md](docs/handlers/KOTA.md) for comprehensive documentation.
 
 Docker
 - `docker-compose up --build -d`

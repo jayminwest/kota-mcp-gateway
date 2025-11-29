@@ -30,6 +30,7 @@ import { WorkspaceHandler } from './handlers/workspace.js';
 import { WebhooksHandler } from './handlers/webhooks.js';
 import { SpotifyHandler } from './handlers/spotify.js';
 import { TasksHandler } from './handlers/tasks.js';
+import { KotaHandler } from './handlers/kota.js';
 import type { ToolkitApi, ToolkitBundleInfo, EnableBundleResult } from './handlers/toolkit.js';
 import type { BaseHandler } from './handlers/base.js';
 import { createTasksRouter } from './routes/tasks.js';
@@ -142,6 +143,10 @@ class BundleRegistry {
     }
     this.disabledBundles.add(key);
     this.opts.logger.info({ bundle: key }, 'Bundle marked for disable on restart');
+  }
+
+  getEnabledHandlers(): Map<string, { handler: BaseHandler; tools: string[] }> {
+    return this.enabled;
   }
 
   private registerHandler(bundleKey: string, handler: BaseHandler): string[] {
@@ -746,6 +751,52 @@ async function main() {
   for (const def of bundleDefinitions) {
     registry.addBundle(def);
   }
+
+  // Create fetch function for kota handler to call other handler tools
+  const createFetchData = () => {
+    return async (toolName: string, args: any): Promise<any> => {
+      // Parse tool name: "handler_action" -> handler prefix and action
+      const parts = toolName.split('_');
+      if (parts.length < 2) {
+        throw new Error(`Invalid tool name format: ${toolName}`);
+      }
+
+      const handlerPrefix = parts[0];
+      const action = parts.slice(1).join('_');
+
+      // Find handler by prefix
+      for (const [key, { handler }] of registry.getEnabledHandlers()) {
+        const prefixes = [handler.prefix, ...(handler.aliases ?? [])];
+        if (prefixes.includes(handlerPrefix)) {
+          // Execute handler action
+          const result = await handler.execute(action, args);
+          // Extract text content from result
+          if (result.content && Array.isArray(result.content)) {
+            const textContent = result.content.find(c => c.type === 'text');
+            if (textContent && 'text' in textContent) {
+              try {
+                return JSON.parse(textContent.text);
+              } catch {
+                return textContent.text;
+              }
+            }
+          }
+          return result;
+        }
+      }
+
+      throw new Error(`Handler not found for tool: ${toolName}`);
+    };
+  };
+
+  // Register kota bundle with fetch function
+  registry.addBundle({
+    key: 'kota',
+    description: 'Context bundling and scope management',
+    autoEnable: true,
+    factory: () => new KotaHandler({ logger, config, fetchData: createFetchData() }),
+    tags: ['core'],
+  });
 
   // Help resources (read-only)
   function registerHelpResource(name: string, uri: string, text: string) {
